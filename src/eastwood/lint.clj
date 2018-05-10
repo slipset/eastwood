@@ -1004,6 +1004,20 @@ Exception thrown while analyzing last namespace.
 "
       )))
 
+(defn make-lint-warning [kw msg opts file]
+  {:kind :lint-warning,
+   :warn-data (let [inf (file-warn-info file (:cwd opts))]
+                (merge
+                 {:linter kw
+                  :msg (format (str msg " '%s'.  It will not be linted.")
+                               (:uri-or-file-name inf))}
+                 inf))
+   :opt opts})
+
+(defn report-errors [cb warning-count errors]
+  (swap! warning-count + (count errors))
+  (doseq [error errors]
+    (cb error)))
 
 (defn eastwood-core
   "Lint a sequence of namespaces using a specified collection of linters.
@@ -1045,27 +1059,13 @@ Return value:
     (when (seq dirs)
       (cb {:kind :dirs-scanned, :dirs-scanned dirs, :opt opts}))
     (when (some #{:no-ns-form-found} (:enabled-linters opts))
-      (doseq [f no-ns-form-found-files]
-        (swap! warning-count inc)
-        (cb {:kind :lint-warning,
-             :warn-data (let [inf (file-warn-info f (:cwd opts))]
-                          (merge
-                           {:linter :no-ns-form-found
-                            :msg (format "No ns form was found in file '%s'.  It will not be linted."
-                                         (:uri-or-file-name inf))}
-                           inf))
-             :opt opts})))
+      (->> no-ns-form-found-files
+           (map (partial make-lint-warning :no-ns-form-found "No ns form was found in file" opts))
+           (report-errors cb warning-count)))
     (when (some #{:non-clojure-file} (:enabled-linters opts))
-      (doseq [f non-clojure-files]
-        (swap! warning-count inc)
-        (cb {:kind :lint-warning,
-             :warn-data (let [inf (file-warn-info f (:cwd opts))]
-                          (merge
-                           {:linter :non-clojure-file
-                            :msg (format "Non-Clojure file '%s'.  It will not be linted."
-                                         (:uri-or-file-name inf))}
-                           inf))
-             :opt opts})))
+      (->> non-clojure-files
+           (map (partial make-lint-warning :non-clojure-file "Non-Clojure file" opts))
+           (report-errors cb warning-count)))
     (cond
      (:err m1) m1
      (:err m2) m2

@@ -592,12 +592,35 @@ curious." eastwood-url))
      {:namespace-sym ns-sym}
      (file-warn-info uri cwd-file))))
 
+(defn handle-lint-result [linter ns-sym ns-info result]
+  (if (instance? Throwable result)
+    {:kind :lint-error
+     :warn-data (format "Exception thrown by linter %s on namespace %s" linter ns-sym)}
+    {:kind :lint-warning,
+     :warn-data (merge result ns-info
+                       (if-let [url (get-in linter-name->info
+                                            [linter :url])]
+                         {:warning-details-url url}))}))
+
+(defn lint-ns* [ns-sym analyze-results opts exception-count warning-count linter]
+  (let [[results time-msec] (timeit (lint-analyze-results analyze-results linter opts))
+        ns-info (namespace-info ns-sym (:cwd opts))]
+    (->> results
+         (map (partial handle-lint-result linter ns-sym ns-info))
+         (map (fn [m] (assoc m :opt opts)))
+         (group-by :kind)
+         (merge {:time time-msec
+                 :linter linter}))))
+
+;; doseq
+;; real	2m35.069s
+;; user	4m12.563s
+;; sys	0m4.463s
 
 (defn lint-ns [ns-sym linters opts warning-count exception-count]
   (let [cb (:callback opts)
         error-cb (util/make-msg-cb :error opts)
-        note-cb (util/make-msg-cb :note opts)
-        ns-info (namespace-info ns-sym (:cwd opts))]
+        note-cb (util/make-msg-cb :note opts)]
     (note-cb (str "== Linting " ns-sym " =="))
     (let [[{:keys [analyze-results exception exception-phase exception-form]}
            analyze-time-msec]
@@ -605,27 +628,16 @@ curious." eastwood-url))
           print-time? (util/debug? :time opts)]
       (when print-time?
         (note-cb (format "Analysis took %.1f millisec" analyze-time-msec)))
-      (doseq [linter linters]
-        (let [[results time-msec] (timeit (lint-analyze-results analyze-results
-                                                                linter opts))]
-          (doseq [result results]
-            (if (instance? Throwable result)
-              (do
-                (error-cb (format "Exception thrown by linter %s on namespace %s"
-                                  linter ns-sym))
-                (swap! exception-count inc)
-                (show-exception ns-sym opts result))
-              (do
-                (swap! warning-count inc)
-                (cb {:kind :lint-warning,
-                     :warn-data (merge result ns-info
-                                       (if-let [url (get-in linter-name->info
-                                                            [linter :url])]
-                                         {:warning-details-url url}))
-                     :opt opts}))))
+      (let [lint-results (pmap (partial lint-ns* ns-sym analyze-results opts) linters)]
+        (doseq [{:keys [lint-warning lint-error time linter]} lint-results]
+          (swap! exception-count + (count lint-error))
+          (swap! warning-count + (count lint-warning))
+          (doseq [error lint-error]
+            (show-exception ns-sym opts result))
+          (doseq [warning lint-warning]
+            (cb warning))
           (when print-time?
-            (note-cb (format "Linter %s took %.1f millisec"
-                             linter time-msec)))))
+            (note-cb (format "Linter %s took %.1f millisec" linter time)))))
       (when exception
         (swap! exception-count inc)
         (error-cb (str "Exception thrown during phase " exception-phase

@@ -6,7 +6,8 @@
             [eastwood.copieddeps.dep1.clojure.tools.analyzer.utils :refer [resolve-sym arglist-for-arity dynamic?]]
             [eastwood.copieddeps.dep1.clojure.tools.analyzer.env :as env]
             [eastwood.copieddeps.dep2.clojure.tools.analyzer.jvm :as j]
-            [eastwood.util :as util]))
+            [eastwood.util :as util]
+            [eastwood.linter :as linter]))
 
 (defn var-of-ast [ast]
   (-> ast :form second))
@@ -63,31 +64,32 @@
     (second x)
     x))
 
-(defn unlimited-use [{:keys [asts]} opt]
-  (for [ast (mapcat ast/nodes asts)
-        :when (use? ast)
-        :let [use-args (map remove-quote-wrapper (rest (-> ast :form)))
-              s (remove use-arg-ok? use-args)
-              ;; Don't warn about unlimited use of clojure.test.  It
-              ;; is very common, and seems harmless enough to me in
-              ;; test code.  Note: No need to have separate versions
-              ;; of the expressions as vectors, since the lists are
-              ;; equal to them.  Also, even though it doesn't cause a
-              ;; compile time error if we include ['clojure.test] in
-              ;; the set below, it does cause a run-time duplicate
-              ;; item exception in createWithCheck if we use Eastwood
-              ;; to lint itself, after it re-evaluates this source
-              ;; file.  I don't fully understand that yet.
-              s (remove #{'clojure.test '(clojure.test) '(clojure test)} s)]
-        :when (seq s)]
-    (let [first-bad-use (first s)
-          first-bad-use-sym (if (symbol? first-bad-use)
-                              first-bad-use
-                              (first first-bad-use))
-          loc (meta first-bad-use-sym)]
-      {:loc loc
-       :linter :unlimited-use
-       :msg (format "Unlimited use of %s in %s" (seq s) (-> ast :env :ns))})))
+(defrecord UnlimitedUse [name enabled url]
+  linter/ILint
+  (pre-process [this opts asts] asts)
+  (lint [this opts ast]
+    (when (use? ast)
+      (let [use-args (map remove-quote-wrapper (rest (-> ast :form)))
+            s (remove use-arg-ok? use-args)
+            ;; Don't warn about unlimited use of clojure.test.  It
+            ;; is very common, and seems harmless enough to me in
+            ;; test code.  Note: No need to have separate versions
+            ;; of the expressions as vectors, since the lists are
+            ;; equal to them.  Also, even though it doesn't cause a
+            ;; compile time error if we include ['clojure.test] in
+            ;; the set below, it does cause a run-time duplicate
+            ;; item exception in createWithCheck if we use Eastwood
+            ;; to lint itself, after it re-evaluates this source
+            ;; file.  I don't fully understand that yet.
+            s (remove #{'clojure.test '(clojure.test) '(clojure test)} s)]
+        (when (seq s)
+          (let [first-bad-use (first s)
+                first-bad-use-sym (if (symbol? first-bad-use)
+                                    first-bad-use
+                                    (first first-bad-use))]
+            {:loc (meta first-bad-use-sym)
+             :linter :unlimited-use
+             :msg (format "Unlimited use of %s in %s" (seq s) (-> ast :env :ns))}))))))
 
 ;; Misplaced docstring
 
@@ -101,14 +103,15 @@
                 :let [first-expr (-> body :statements first)]]
             (string? (-> first-expr :form))))))
 
-(defn misplaced-docstrings [{:keys [asts]} opt]
-  (for [ast (mapcat ast/nodes asts)
-        :when (and (= (:op ast) :def)
-                   (misplaced-docstring? ast))
-        :let [loc (-> ast var-of-ast meta)]]
-    {:loc loc
-     :linter :misplaced-docstrings
-     :msg (format "Possibly misplaced docstring, %s" (var-of-ast ast))}))
+(defrecord MisplacedDocstrings [name enabled url]
+  linter/ILint
+  (pre-process [this opts asts] asts)
+  (lint [this opts ast]
+    (when (and (= (:op ast) :def)
+               (misplaced-docstring? ast))
+      {:loc (-> ast var-of-ast meta)
+       :linter :misplaced-docstrings
+       :msg (format "Possibly misplaced docstring, %s" (var-of-ast ast))})))
 
 ;; Nondynamic earmuffed var
 

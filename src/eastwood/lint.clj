@@ -7,11 +7,13 @@
             [clojure.string :as str]
             [clojure.pprint :as pp]
             [eastwood.error-messages :as msgs]
+            [eastwood.copieddeps.dep1.clojure.tools.analyzer.ast :as ast]
             [eastwood.copieddeps.dep9.clojure.tools.namespace.file :as file]
             [eastwood.copieddeps.dep9.clojure.tools.namespace.find :as find]
             [eastwood.copieddeps.dep9.clojure.tools.namespace.track :as track]
             [eastwood.copieddeps.dep9.clojure.tools.namespace.dir :as dir]
             [eastwood.copieddeps.dep11.clojure.java.classpath :as classpath]
+            [eastwood.linter :as linter]
             [eastwood.linters.misc :as misc]
             [eastwood.linters.deprecated :as deprecated]
             [eastwood.linters.unused :as unused]
@@ -29,7 +31,6 @@
          (if (and qualifier (not= qualifier ""))
            (str "-" qualifier)
            ""))))
-
 
 (defmulti error-msg
   "Given a map describing an Eastwood error result, which should
@@ -219,9 +220,8 @@ describing the error."
    {:name :non-clojure-file,          :enabled-by-default false,
     :url "https://github.com/jonase/eastwood#non-clojure-file",
     :fn (constantly nil)}
-   {:name :misplaced-docstrings,      :enabled-by-default true,
-    :url "https://github.com/jonase/eastwood#misplaced-docstrings",
-    :fn misc/misplaced-docstrings}
+   (misc/->MisplacedDocstrings :misplaced-docstrings, true
+                               "https://github.com/jonase/eastwood#misplaced-docstrings")
    {:name :deprecations,              :enabled-by-default true,
     :url "https://github.com/jonase/eastwood#deprecations",
     :fn deprecated/deprecations}
@@ -273,9 +273,7 @@ describing the error."
    {:name :unused-meta-on-macro,      :enabled-by-default true,
     :url "https://github.com/jonase/eastwood#unused-meta-on-macro",
     :fn unused/unused-meta-on-macro}
-   {:name :unlimited-use,             :enabled-by-default true,
-    :url "https://github.com/jonase/eastwood#unlimited-use",
-    :fn misc/unlimited-use}
+   (misc/->UnlimitedUse :unlimited-use true "https://github.com/jonase/eastwood#unlimited-use")
    {:name :wrong-ns-form,             :enabled-by-default true,
     :url "https://github.com/jonase/eastwood#wrong-ns-form",
     :fn misc/wrong-ns-form}
@@ -360,8 +358,14 @@ describing the error."
 (defn- run-linter [linter analyze-results ns-sym opts]
   (let [ns-info (namespace-info ns-sym (:cwd opts))]
     (try
-      (doall (->> ((:fn linter) analyze-results opts)
-                  (map (partial handle-lint-result linter ns-info))))
+      (doall (if (satisfies? linter/ILint linter)
+               (some->> analyze-results
+                        :asts
+                        (mapcat ast/nodes)
+                        (keep (partial linter/lint linter opts))
+                        (map (partial handle-lint-result linter ns-info)))
+               (->> ((:fn linter) analyze-results opts)
+                    (map (partial handle-lint-result linter ns-info)))))
       (catch Throwable e
         [{:kind :lint-error
           :warn-data (format "Exception thrown by linter %s on namespace %s" (:name linter) ns-sym)}]))))

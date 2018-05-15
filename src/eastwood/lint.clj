@@ -220,38 +220,24 @@ describing the error."
    {:name :non-clojure-file,          :enabled-by-default false,
     :url "https://github.com/jonase/eastwood#non-clojure-file",
     :fn (constantly nil)}
-   (misc/->MisplacedDocstrings :misplaced-docstrings, true
+   (misc/->MisplacedDocstrings :misplaced-docstrings true
                                "https://github.com/jonase/eastwood#misplaced-docstrings")
-   {:name :deprecations,              :enabled-by-default true,
-    :url "https://github.com/jonase/eastwood#deprecations",
-    :fn deprecated/deprecations}
-   {:name :duplicate-params,          :enabled-by-default true,
-    :url "https://github.com/jonase/eastwood#duplicate-params",
-    :fn typos/duplicate-params}
-   {:name :redefd-vars,               :enabled-by-default true,
-    :url "https://github.com/jonase/eastwood#redefd-vars",
-    :fn misc/redefd-vars}
-   {:name :def-in-def,                :enabled-by-default true,
-    :url "https://github.com/jonase/eastwood#def-in-def",
-    :fn misc/def-in-def}
-   {:name :wrong-arity,               :enabled-by-default true,
-    :url "https://github.com/jonase/eastwood#wrong-arity",
-    :fn misc/wrong-arity}
-   {:name :bad-arglists,              :enabled-by-default true,
-    :url "https://github.com/jonase/eastwood#bad-arglists",
-    :fn misc/bad-arglists}
-   {:name :local-shadows-var,         :enabled-by-default true,
-    :url "https://github.com/jonase/eastwood#local-shadows-var",
-    :fn misc/local-shadows-var}
+   (deprecated/->Deprecations :deprecations true "https://github.com/jonase/eastwood#deprecations")
+   (typos/->DuplicateParams :duplicate-params true "https://github.com/jonase/eastwood#duplicate-params")
+
+   (misc/->BadArglists :bad-arglists true "https://github.com/jonase/eastwood#bad-arglists")
+   (misc/->RedefdVars :redefd-vars true "https://github.com/jonase/eastwood#redefd-vars")
+   (misc/->DefInDef :def-in-def true "https://github.com/jonase/eastwood#def-in-def")
+   (misc/->WrongArity :wrong-arity true "https://github.com/jonase/eastwood#wrong-arity")
+
+   (misc/->LocalShadowsVar :local-shadows-var true "https://github.com/jonase/eastwood#local-shadows-var")
    {:name :suspicious-test,           :enabled-by-default true,
     :url "https://github.com/jonase/eastwood#suspicious-test",
     :fn typos/suspicious-test}
    {:name :suspicious-expression,     :enabled-by-default true,
     :url "https://github.com/jonase/eastwood#suspicious-expression",
     :fn typos/suspicious-expression}
-   {:name :constant-test,             :enabled-by-default true,
-    :url "https://github.com/jonase/eastwood#constant-test",
-    :fn typos/constant-test}
+   (typos/->ConstantTest :constant-test true "https://github.com/jonase/eastwood#constant-test")
    {:name :unused-ret-vals,           :enabled-by-default true,
     :url "https://github.com/jonase/eastwood#unused-ret-vals",
     :fn unused/unused-ret-vals}
@@ -286,10 +272,7 @@ describing the error."
    {:name :keyword-typos,             :enabled-by-default false,
     :url "https://github.com/jonase/eastwood#keyword-typos",
     :fn typos/keyword-typos}
-   {:name :non-dynamic-earmuffs,      :enabled-by-default false,
-    :url nil,
-    :fn misc/non-dynamic-earmuffs}
-   ])
+   (misc/->NonDynamicEarmuffs :non-dynamic-earmuffs false nil)])
 
 
 (def linter-name->info (into {} (for [{:keys [name] :as info} linter-info]
@@ -358,14 +341,23 @@ describing the error."
 (defn- run-linter [linter analyze-results ns-sym opts]
   (let [ns-info (namespace-info ns-sym (:cwd opts))]
     (try
-      (doall (if (satisfies? linter/ILint linter)
-               (some->> analyze-results
+;      (println "RUNNING" (:name linter) (satisfies? linter/ILint linter) (satisfies? linter/ILintMultiple linter))
+      (doall (cond (satisfies? linter/ILint linter)
+                   (->> analyze-results
                         :asts
-                        (mapcat ast/nodes)
+                        (linter/preprocess linter opts)
                         (keep (partial linter/lint linter opts))
                         (map (partial handle-lint-result linter ns-info)))
-               (->> ((:fn linter) analyze-results opts)
-                    (map (partial handle-lint-result linter ns-info)))))
+                   (satisfies? linter/ILintMultiple linter)
+                   (->> analyze-results
+                        :asts
+                        (linter/preprocess-multiple linter opts)
+                        (mapcat (partial linter/lint-multiple linter opts))
+                        (filter seq)
+                        (map (partial handle-lint-result linter ns-info)))
+                   :else
+                   (->> ((:fn linter) analyze-results opts)
+                        (map (partial handle-lint-result linter ns-info)))))
       (catch Throwable e
         [{:kind :lint-error
           :warn-data (format "Exception thrown by linter %s on namespace %s" (:name linter) ns-sym)}]))))

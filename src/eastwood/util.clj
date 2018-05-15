@@ -798,6 +798,9 @@ StringWriter."
                  :ast
                  ]))
 
+(defn debug [x]
+  (clojure.pprint/pprint x) x)
+
 (defn enclosing-macros
   [ast]
   (apply concat

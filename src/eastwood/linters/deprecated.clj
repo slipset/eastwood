@@ -2,6 +2,7 @@
   (:refer-clojure :exclude [get-method])
   (:require [eastwood.passes :as pass]
             [eastwood.util :as util]
+            [eastwood.linter :as linter]
             [eastwood.copieddeps.dep1.clojure.tools.analyzer.ast :as ast])
   (:import (java.lang.reflect Method Constructor Field)))
 
@@ -96,20 +97,22 @@
   (let [[var type] (deprecated-var expr)]
     (format "%s '%s' is deprecated." type var)))
 
-(defn allow-warning [w opt]
-  (when-let [regexes (get-in opt [:warning-enable-config :deprecations :symbol-matches])]
-    (let [offending-var (-> w :var first str)]
-      (some #(re-matches % offending-var) regexes))))
+(defn allow-warning [dvar symbol-matches]
+  (when symbol-matches
+    (let [offending-var (-> dvar first str)]
+      (some #(re-matches % offending-var) symbol-matches))))
 
-(defn deprecations [{:keys [asts]} opt]
-  (for [ast (map #(ast/postwalk % pass/reflect-validated) asts)
-        dexpr (filter deprecated (ast/nodes ast))
-        :let [loc (pass/code-loc (pass/nearest-ast-with-loc dexpr))
-              w {:loc loc
-                 :linter :deprecations
-                 :msg (msg dexpr)
-                 :var (deprecated-var dexpr)}
-              allow? (not (allow-warning w opt))]
-        :when allow?]
-    w
-))
+(defrecord Deprecations [name enabled-by-default url]
+  linter/ILint
+  (preprocess [this opts asts]
+    (->> asts
+         (map #(ast/postwalk % pass/reflect-validated))
+         (mapcat ast/nodes)
+         (filter deprecated)))
+  (lint [this opts ast]
+    (let [dvar (deprecated-var ast)]
+      (when (not (allow-warning dvar (get-in opts [:warning-enable-config :deprecations :symbol-matches])))
+        {:loc (pass/code-loc (pass/nearest-ast-with-loc ast))
+         :linter (:name this)
+         :msg (msg ast)
+         :var dvar}))))

@@ -64,9 +64,9 @@
     (second x)
     x))
 
-(defrecord UnlimitedUse [name enabled url]
+(defrecord UnlimitedUse [name enabled-by-default url]
   linter/ILint
-  (pre-process [this opts asts] asts)
+  (preprocess [this opts asts] (mapcat ast/nodes asts))
   (lint [this opts ast]
     (when (use? ast)
       (let [use-args (map remove-quote-wrapper (rest (-> ast :form)))
@@ -88,7 +88,7 @@
                                     first-bad-use
                                     (first first-bad-use))]
             {:loc (meta first-bad-use-sym)
-             :linter :unlimited-use
+             :linter (:name this)
              :msg (format "Unlimited use of %s in %s" (seq s) (-> ast :env :ns))}))))))
 
 ;; Misplaced docstring
@@ -103,14 +103,14 @@
                 :let [first-expr (-> body :statements first)]]
             (string? (-> first-expr :form))))))
 
-(defrecord MisplacedDocstrings [name enabled url]
+(defrecord MisplacedDocstrings [name enabled-by-default url]
   linter/ILint
-  (pre-process [this opts asts] asts)
+  (preprocess [this opts asts] (mapcat ast/nodes asts))
   (lint [this opts ast]
     (when (and (= (:op ast) :def)
                (misplaced-docstring? ast))
       {:loc (-> ast var-of-ast meta)
-       :linter :misplaced-docstrings
+       :linter (:name this)
        :msg (format "Possibly misplaced docstring, %s" (var-of-ast ast))})))
 
 ;; Nondynamic earmuffed var
@@ -121,19 +121,18 @@
          (.startsWith s "*")
          (.endsWith s "*"))))
 
-(defn non-dynamic-earmuffs [{:keys [asts]} opt]
-  (for [expr (mapcat ast/nodes asts)
-        :when (= (:op expr) :def)
-        :let [^clojure.lang.Var v (:var expr)
-              s (.sym v)
-              loc (:env expr)]
-        :when (and (earmuffed? s)
-                   (not (dynamic? v)))]
-    {:loc loc
-     :linter :non-dynamic-earmuffs
-     :msg (format "%s should be marked dynamic" v)}))
-
-
+(defrecord NonDynamicEarmuffs [name enabled-by-default url]
+  linter/ILint
+  (preprocess [this opts asts] (mapcat ast/nodes asts))
+  (lint [this opts ast]
+        (when (= (:op ast) :def)
+          (let [^clojure.lang.Var v (:var ast)
+                s (.sym v)]
+            (when (and (earmuffed? s)
+                       (not (dynamic? v)))
+              {:loc (:env ast)
+               :linter (:name this)
+               :msg (format "%s should be marked dynamic" v)})))))
 
 ;; redef'd vars
 
@@ -156,10 +155,7 @@
 ;; protocol name.  See if I can figure out how to recognize this
 ;; situation and not warn about them.
 
-
-
 (def ^:dynamic *def-walker-data* 0)
-
 
 ;; TBD: Test a case like this to see what happens:
 
@@ -232,15 +228,14 @@
     (select-keys *def-walker-data* [:top-level-defs :nested-defs])))
 
 
-(defn- defd-vars [exprs]
-  (:top-level-defs (def-walker exprs)))
+
 
 
 (defn allow-both-defs? [def-ast1 def-ast2 defd-var all-asts opt]
   (let [lca-path (util/longest-common-prefix
                   (:eastwood/path def-ast1)
                   (:eastwood/path def-ast2))]
-;;    (println (format "dbg allow-both-defs:"))
+    ;;    (println (format "dbg allow-both-defs:"))
 ;;    (println (format "  path1=%s" (:eastwood/path def-ast1)))
 ;;    (println (format "  path2=%s" (:eastwood/path def-ast2)))
 ;;    (println (format "  lca-path=%s" lca-path))
@@ -250,6 +245,7 @@
                                              :redefd-vars])
             ;; Don't bother calculating enclosing-macros if there are
             ;; no suppress-conditions to check, to save time.
+
             [lca-path lca-ast]
             (if (seq suppress-conditions)
               (let [a (get-in all-asts lca-path)]
@@ -288,7 +284,7 @@
         (not match)))))
 
 
-(defn remove-dup-defs [defd-var asts all-asts opt]
+(defn remove-dup-defs [opt all-asts [defd-var asts]]
   (loop [ret []
          asts asts]
     (if (seq asts)
@@ -310,55 +306,42 @@
       loc1
       (-> ast :env))))
 
-(defn redefd-var-loc-desc [var-ast]
-  (let [loc (redefd-var-loc var-ast)]
-    (str (if-let [f (:file loc)]
-           (str f ":")
-           "")
-         (:line loc) ":" (:column loc))))
+(defn redefd-var-loc-desc [{:keys [file line column] :as  loc}]
+  (str (if file (str file ":") "") line ":" column))
 
-(defn redefd-vars [{:keys [asts]} opt]
-  (let [defd-var-asts (defd-vars asts)
-        defd-var-groups (group-by #(-> % :form second) defd-var-asts)
-        ;; Remove any def's for Vars that are inside the same macro
-        ;; expansion (from Eastwood configuration) as another def for
-        ;; the same Var.
-        defd-var-groups (into {}
-                              (map (fn [[defd-var def-asts]]
-                                     [defd-var
-                                      (remove-dup-defs defd-var def-asts asts opt)])
-                                   defd-var-groups))]
-    (for [[_defd-var ast-list] defd-var-groups
-          :when (> (count ast-list) 1)
-          :let [ast2 (second ast-list)
-                loc2 (redefd-var-loc ast2)
-                redefd-var (var-of-ast ast2)
-                num-defs (count ast-list)
-                w {:loc loc2
-                   :linter :redefd-vars
-                   :msg (format "Var %s def'd %d times at line:col locations: %s"
-                                redefd-var num-defs
-                                (string/join
-                                 " "
-                                 (map redefd-var-loc-desc ast-list)))}
-                ;; TBD: true is placeholder for some configurable
-                ;; method of disabling redefd-var warnings
-                allow? true]
-          :when allow?]
-      (do
-        (util/debug-warning w nil opt #{}
-         (fn []
-           (println (format "was generated because of the following %d defs"
-                            num-defs))
-           (println (format "paths to ASTs of %d defs for Var %s"
-                            num-defs redefd-var))
-           (doseq [[i ast] (map-indexed vector ast-list)]
-             (println (format "#%d: %s" (inc i) (:eastwood/path ast))))
-           (doseq [[i ast] (map-indexed vector ast-list)]
-             (println (format "enclosing macros for def #%d of %d for Var %s"
-                              (inc i) num-defs redefd-var))
-             (pp/pprint (->> (util/enclosing-macros ast)
-                             (map #(dissoc % :ast :index)))))))
+(defrecord RedefdVars [name enabled-by-default url]
+  linter/ILint
+  (preprocess [this opts asts]
+    (->> asts
+         def-walker
+         :top-level-defs
+         (group-by #(-> % :form second))
+         (map (partial remove-dup-defs opts asts))))
+  (lint [this opts ast-list]
+    (when (> (count ast-list) 1)
+      (let [ast2 (second ast-list)
+            redefd-var (var-of-ast ast2)
+            num-defs (count ast-list)
+            w {:loc (redefd-var-loc ast2)
+               :linter (:name this)
+               :msg (format "Var %s def'd %d times at line:col locations: %s"
+                            redefd-var num-defs
+                            (string/join
+                             " "
+                             (map (comp redefd-var-loc-desc redefd-var-loc) ast-list)))}]
+        (util/debug-warning w nil opts #{}
+                            (fn []
+                              (println (format "was generated because of the following %d defs"
+                                               num-defs))
+                              (println (format "paths to ASTs of %d defs for Var %s"
+                                               num-defs redefd-var))
+                              (doseq [[i ast] (map-indexed vector ast-list)]
+                                (println (format "#%d: %s" (inc i) (:eastwood/path ast))))
+                              (doseq [[i ast] (map-indexed vector ast-list)]
+                                (println (format "enclosing macros for def #%d of %d for Var %s"
+                                                 (inc i) num-defs redefd-var))
+                                (pp/pprint (->> (util/enclosing-macros ast)
+                                                (map #(dissoc % :ast :index)))))))
         w))))
 
 
@@ -369,21 +352,17 @@
 ;; here, too?  Try to find a small example, if so, and add it to the
 ;; tests.
 
-(defn- def-in-def-vars [exprs]
-  (:nested-defs (def-walker exprs)))
-
-
-(defn def-in-def [{:keys [asts]} opt]
-  (let [nested-vars (def-in-def-vars asts)]
-    (for [nested-var-ast nested-vars
-          :let [loc (-> nested-var-ast var-of-ast meta)]]
-      {:loc loc
-       :linter :def-in-def
-       :msg (format "There is a def of %s nested inside def %s"
-                    (var-of-ast nested-var-ast)
-                    (-> nested-var-ast
-                        :eastwood/enclosing-def-ast
-                        var-of-ast))})))
+(defrecord DefInDef [name enabled-by-default url]
+  linter/ILint
+  (preprocess [this opts asts]   (:nested-defs (def-walker asts)))
+  (lint [this opts nested-var-ast]
+    {:loc (-> nested-var-ast var-of-ast meta)
+     :linter (:name this)
+     :msg (format "There is a def of %s nested inside def %s"
+                  (var-of-ast nested-var-ast)
+                  (-> nested-var-ast
+                      :eastwood/enclosing-def-ast
+                      var-of-ast))}))
 
 ;; Helpers for wrong arity and bad :arglists
 
@@ -468,64 +447,48 @@
 
 ;; Wrong arity
 
-(defn wrong-arity [{:keys [asts]} opt]
-  (let [invoke-asts (->> asts
-                         (mapcat ast/nodes)
-                         (filter #(and (= :invoke (:op %))
-                                       (-> % :fn :arglists))))]
-    (for [ast invoke-asts
-          :let [args (:args ast)
-                func (:fn ast)
-                fn-kind (-> func :op)
-                [fn-var fn-sym]
-                 (case fn-kind
-                   :var [(-> func :var)
-                         (util/var-to-fqsym (-> func :var))]
-                   :local [nil (-> func :form)]
-                   [nil 'no-name])
-                arglists (:arglists func)
-                override-arglists (-> opt :warning-enable-config
-                                      :wrong-arity fn-sym)
-                lint-arglists (or (-> override-arglists
-                                      :arglists-for-linting)
-                                  arglists)
-                loc (-> func :form meta)
-;;                _ (println (format "fn=%s (count args)=%d lint-arglists=%s ok=%s arglist-for-arity=%s loc=%s"
-;;                                   fn-sym (count args)
-;;                                   (seq lint-arglists)
-;;                                   (arg-count-compatible-with-arglists
-;;                                    (count args) lint-arglists)
-;;                                   (arglist-for-arity
-;;                                    {:arglists lint-arglists} (count args))
-;;                                   (select-keys loc #{:file :line :column})
-;;                                   ))
-                ]
-          :when (not (arg-count-compatible-with-arglists (count args)
-                                                         lint-arglists))
-          :let [w {:loc loc
-                   :linter :wrong-arity
-                   :wrong-arity {:kind :the-only-kind
-                                 :fn-var fn-var
-                                 :call-args args}
-                   :msg (format "Function on %s %s called with %s args, but it is only known to take one of the following args: %s"
-                                (name fn-kind)
-                                (if (= :var fn-kind) fn-var fn-sym)
-                                (count args)
-                                (string/join "  " lint-arglists))}]]
-      (do
-        (util/debug-warning w ast opt #{:enclosing-macros}
-         (fn []
-           (println (format "was generated because of a function call on '%s' with %d args"
-                            fn-sym (count args)))
-           (println "arglists from metadata on function var:")
-           (pp/pprint arglists)
-;;           (println (format "  argvec-kinds="))
-;;           (pp/pprint (map argvec-kind arglists))
-           (when override-arglists
-             (println "arglists overridden by Eastwood config to the following:")
-             (pp/pprint lint-arglists)
-             (println "Reason:" (-> override-arglists :reason)))))
-        w))))
+(defrecord WrongArity [name enabled-by-default url]
+  linter/ILint
+  (preprocess [this opts asts]
+    (->> (mapcat ast/nodes asts)
+         (filter #(and (= :invoke (:op %))
+                       (-> % :fn :arglists)))))
+  (lint [this opts ast]
+    (let [args (:args ast)
+          func (:fn ast)
+          fn-kind (:op func)
+          [fn-var fn-sym] (case fn-kind
+                            :var [(:var func) (util/var-to-fqsym (:var func))]
+                            :local [nil (:form func)]
+                            [nil 'no-name])
+          arglists (:arglists func)
+          override-arglists (-> opts :warning-enable-config :wrong-arity fn-sym)
+          lint-arglists (or (:arglists-for-linting override-arglists) arglists)]
+      (when (not (arg-count-compatible-with-arglists (count args) lint-arglists))
+        (let [w {:loc (-> func :form meta)
+                 :linter (:name this)
+                 :wrong-arity {:kind :the-only-kind
+                               :fn-var fn-var
+                               :call-args args
+                               }
+                 :msg (format "Function on %s %s called with %s args, but it is only known to take one of the following args: %s"
+                              (clojure.core/name fn-kind)
+                              (if (= :var fn-kind) fn-var fn-sym)
+                              (count args)
+                              (string/join "  " lint-arglists))}]
+          (util/debug-warning w ast opts #{:enclosing-macros}
+                              (fn []
+                                (println (format "was generated because of a function call on '%s' with %d args"
+                                                 fn-sym (count args)))
+                                (println "arglists from metadata on function var:")
+                                (pp/pprint arglists)
+                                ;;           (println (format "  argvec-kinds="))
+                                ;;           (pp/pprint (map argvec-kind arglists))
+                                (when override-arglists
+                                  (println "arglists overridden by Eastwood config to the following:")
+                                  (pp/pprint lint-arglists)
+                                  (println "Reason:" (-> override-arglists :reason)))))
+          w)))))
 
 
 ;; Bad :arglists
@@ -694,75 +657,77 @@
     (second x)
     x))
 
-(defn bad-arglists [{:keys [asts]} opt]
-  (let [def-fn-asts (->> asts
-                         (mapcat ast/nodes)
-                         (filter (fn [a]
-                                   (and (= :def (:op a))
-                                        (not (-> a :name meta :declared true?))
-                                        (or (= :fn (-> a :init :op))
-                                            ;; this case handles
-                                            ;; Clojure 1.8.0-RC1
-                                            (= :fn (-> a :init :expr :op)))))))]
-    (apply concat
-     (for [a def-fn-asts]
-       (let [macro? (-> a :var meta :macro)
-             fn-arglists (-> a :init :arglists)
-             macro-args? (or (not macro?)
-                             (every? #(= '(&form &env) (take 2 %)) fn-arglists))
-             meta-arglists (cond (contains? (-> a :meta :val) :arglists)
-                                 (maybe-unwrap-quote
-                                  (-> a :meta :val :arglists))
-                                 ;; see case 2 notes above
-                                 (and (contains? (-> a :meta) :keys)
-                                      (->> (-> a :meta :keys)
-                                           (some #(= :test (get % :val)))))
-                                 [[]]
-                                 ;; see case 3 notes above
-                                 :else nil)
-             fn-arglists (if (and macro? macro-args?)
-                           (map #(subvec % 2) fn-arglists)
-                           fn-arglists)
-             fn-sigs (signature-union fn-arglists)
-             meta-sigs (signature-union meta-arglists)
-;;             _ (do
-;;                 (println (format "dbg bad-arglists (:name a)=%s:" (:name a)))
-;;                 ;;(util/pprint-ast-node a)
-;;                 (println (format "    (:name a)=%s" (:name a)))
-;;                 (println (format "    fn-arglists: %s" fn-arglists))
-;;                 (println (format "    fn-sigs: %s" fn-sigs))
-;;                 (println (format "    meta-arglists: %s" meta-arglists))
-;;                 (println (format "    meta-sigs: %s" meta-sigs))
-;;                 (println (format "    (more-restrictive-sigs? meta-sigs fn-sigs)=%s"
-;;                                  (more-restrictive-sigs? meta-sigs fn-sigs)))
-;;                 )
-             loc (-> a var-of-ast meta)]
-         (if (and (not (nil? meta-arglists))
-                  (not (more-restrictive-sigs? meta-sigs fn-sigs)))
-           [{:loc loc
-             :linter :bad-arglists
-             :msg (format "%s on var %s defined taking # args %s but :arglists metadata has # args %s"
-                          (if macro? "Macro" "Function")
-                          (-> a :name)
-                          fn-sigs
-                          meta-sigs)}]))))))
+(defrecord BadArglists [name enabled-by-default url]
+  linter/ILint
+  (preprocess [this opts asts]
+    (->> asts
+         (mapcat ast/nodes)
+         (filter (fn [ast]
+                   (and (= :def (:op ast))
+                        (not (-> ast :name meta :declared true?))
+                        (or (= :fn (-> ast :init :op))
+                            ;; this case handles
+                            ;; Clojure 1.8.0-RC1
+                            (= :fn (-> ast :init :expr :op))))))))
+  (lint [this opts ast]
+    (let [macro? (-> ast :var meta :macro)
+          fn-arglists (-> ast :init :arglists)
+          macro-args? (or (not macro?)
+                          (every? #(= '(&form &env) (take 2 %)) fn-arglists))
+          meta-arglists (cond (contains? (-> ast :meta :val) :arglists)
+                              (maybe-unwrap-quote
+                               (-> ast :meta :val :arglists))
+                              ;; see case 2 notes above
+                              (and (contains? (-> ast :meta) :keys)
+                                   (->> (-> ast :meta :keys)
+                                        (some #(= :test (get % :val)))))
+                              [[]]
+                              ;; see case 3 notes above
+                              :else nil)
+          fn-arglists (if (and macro? macro-args?)
+                        (map #(subvec % 2) fn-arglists)
+                        fn-arglists)
+          fn-sigs (signature-union fn-arglists)
+          meta-sigs (signature-union meta-arglists)
+          ;;             _ (do
+          ;;                 (println (format "dbg bad-arglists (:name a)=%s:" (:name a)))
+          ;;                 ;;(util/pprint-ast-node a)
+          ;;                 (println (format "    (:name a)=%s" (:name a)))
+          ;;                 (println (format "    fn-arglists: %s" fn-arglists))
+          ;;                 (println (format "    fn-sigs: %s" fn-sigs))
+          ;;                 (println (format "    meta-arglists: %s" meta-arglists))
+          ;;                 (println (format "    meta-sigs: %s" meta-sigs))
+          ;;                 (println (format "    (more-restrictive-sigs? meta-sigs fn-sigs)=%s"
+          ;;                                  (more-restrictive-sigs? meta-sigs fn-sigs)))
+          ;;                 )
+          ]
+      (when (and (not (nil? meta-arglists))
+                 (not (more-restrictive-sigs? meta-sigs fn-sigs)))
+        {:loc (-> ast var-of-ast meta)
+         :linter (:name this)
+         :msg (format "%s on var %s defined taking # args %s but :arglists metadata has # args %s"
+                      (if macro? "Macro" "Function")
+                      (:name ast)
+                      fn-sigs
+                      meta-sigs)}))))
 
 ;; TBD: Consider also looking for local symbols in positions of forms
 ;; where they appeared to be used as functions, e.g. as the second arg
 ;; to map, apply, etc.
-(defn local-shadows-var [{:keys [asts]} opt]
-  (for [{:keys [op fn env]} (mapcat ast/nodes asts)
-        :when (and (= op :invoke)
-                   ;; In the examples I have looked at, (:o-tag fn) is
-                   ;; also equal to 'clojure.lang.AFunction.  What is
-                   ;; the difference between that and (:tag fn) ?
-                   (not= clojure.lang.AFunction (:tag fn))
-                   (contains? (:locals env) (:form fn)))
-        :let [v (env/ensure (j/global-env) (resolve-sym (:form fn) env))]
-        :when v]
-    {:loc env
-     :linter :local-shadows-var
-     :msg (str "local: " (:form fn) " invoked as function shadows var: " v)}))
+(defrecord LocalShadowsVar [name enabled-by-default url]
+  linter/ILint
+  (preprocess [this opts asts] (mapcat ast/nodes asts))
+  (lint [this opts {:keys [op fn env]}]
+    (when (and (= op :invoke)
+                    ;; In the examples I have looked at, (:o-tag fn) is
+                    ;; also equal to 'clojure.lang.AFunction.  What is
+                    ;; the difference between that and (:tag fn) ?
+                    (not= clojure.lang.AFunction (:tag fn))
+                    (contains? (:locals env) (:form fn)))
+      (when-let [v (env/ensure (j/global-env) (resolve-sym (:form fn) env))]
+        {:loc env
+         :linter :local-shadows-var
+         :msg (str "local: " (:form fn) " invoked as function shadows var: " v)}))))
 
 
 ;; Wrong ns form
@@ -771,7 +736,6 @@
   #{:refer-clojure
     :require :use :import
     :load :gen-class})
-
 
 ;; Nearly identical to clojure.core/libspec?
 
@@ -1018,7 +982,6 @@
           :gen-class [] ; tbd: no checking yet
           :load []) ; tbd: no checking yet
         )))))
-
 
 (defn wrong-ns-form [{:keys [asts]} opt]
   (let [ns-asts (util/ns-form-asts asts)

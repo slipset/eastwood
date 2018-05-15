@@ -45,7 +45,6 @@ the next."
 
 (def default-opts {})
 
-
 (defmacro lint-test [ns-sym linters opts expected-lint-result]
   `(let [lint-result# (lint-ns-noprint ~ns-sym ~linters ~opts)
          lint-result2# (->> lint-result#
@@ -66,6 +65,24 @@ the next."
 
 (defn fname-from-parts [& parts]
   (str/join File/separator parts))
+
+(deftest bad-arglists
+  (lint-test
+   'testcases.arglists
+   [:bad-arglists :unused-locals]
+   default-opts
+   {
+    {:linter :bad-arglists,
+     :msg "Function on var fn-with-arglists1 defined taking # args [1] but :arglists metadata has # args [2]",
+     :file (fname-from-parts "testcases" "arglists.clj"),
+     :line 9, :column 7}
+    1,
+    {:linter :bad-arglists,
+     :msg "Function on var fn-with-arglists3 defined taking # args [1 3] but :arglists metadata has # args [2 4]",
+     :file (fname-from-parts "testcases" "arglists.clj"),
+     :line 22, :column 7}
+    1,
+    }))
 
 (deftest test1
   (lint-test

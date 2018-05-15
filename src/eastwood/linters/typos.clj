@@ -1,6 +1,7 @@
 (ns eastwood.linters.typos
-  (:require [clojure.pprint :as pp])
-  (:require [eastwood.util :as util]
+  (:require [clojure.pprint :as pp]
+            [eastwood.linter :as linter]
+            [eastwood.util :as util]
             [eastwood.passes :as pass]
             [clojure.set :as set]
             [clojure.string :as str]
@@ -865,28 +866,26 @@ warning, that contains the constant value."
           (-> ast :raw-forms first util/fqsym-of-raw-form))))
 
 
-(defn constant-test [{:keys [asts]} opt]
-  (let [const-tests (->> asts
-                         (mapcat ast/nodes)
-                         (keep #(if (default-case-at-end-of-cond? %)
-                                  nil
-                                  (if-let [x (if-with-predictable-test %)]
-                                    [% x]))))]
-    (for [[ast constant-test-ast] const-tests
-          :let [test-form (-> constant-test-ast :form)
-                form (-> ast :form)
-                loc (or (pass/has-code-loc? (-> ast :form meta))
-                        (pass/code-loc (pass/nearest-ast-with-loc ast)))
-                w {:loc loc
-                   :linter :constant-test
-                   :constant-test {:kind :the-only-kind
-                                   :ast ast}
-                   :msg (format "Test expression is always logical true or always logical false: %s in form %s"
-                                (pr-str test-form) (pr-str form))}
-                allow? (util/allow-warning w opt)]
-          :when allow?]
-      (do
-        (util/debug-warning w ast opt #{:enclosing-macros})
+(defrecord ConstantTest [name enabled-by-default url]
+  linter/ILint
+  (preprocess [this opts asts]
+    (->> (mapcat ast/nodes asts)
+         (keep #(if (default-case-at-end-of-cond? %)
+                  nil
+                  (if-let [x (if-with-predictable-test %)]
+                    [% x])))))
+  (lint [this opts [ast constant-test-ast]]
+    (let [test-form (:form constant-test-ast)
+          form (:form ast)
+          loc (or (pass/has-code-loc? (-> ast :form meta))
+                  (pass/code-loc (pass/nearest-ast-with-loc ast)))
+          w {:loc loc
+             :linter :constant-test
+             :constant-test {:kind :the-only-kind :ast ast}
+             :msg (format "Test expression is always logical true or always logical false: %s in form %s"
+                          (pr-str test-form) (pr-str form))}]
+      (when (util/allow-warning w opts)
+        (util/debug-warning w ast opts #{:enclosing-macros})
         w))))
 
 
@@ -1355,39 +1354,37 @@ wish."
        (map second)))
 
 
-(defn duplicate-params [{:keys [asts]} opt]
-  (let [arg-vecs (->> asts
-                      (mapcat ast/nodes)
-                      (mapcat arg-vecs-of-ast))]
-    (doall
-    (apply concat
-     (for [arg-vec arg-vecs
-           :let [loc (meta arg-vec)]]
-       (let [{:keys [result local-names warnings] :as info}
-             (seq-binding-form-info arg-vec loc true)]
-         (if result
-           (let [
-;                 _ (do
-;                     (println "dbg arg-vec " arg-vec)
-;                     (println "dbg (type local-names):" (type local-names))
-;                     (pp/pprint local-names)
-;                     (flush))
-                 dups (->> (duplicate-local-names local-names)
-                           (remove #(dont-warn-for-symbol? (:local-name %))))]
-             (concat
-              (map (fn [dup]
-                     {:loc (:loc dup)
+(defrecord DuplicateParams [name enabled-by-default url]
+  linter/ILintMultiple
+  (preprocess-multiple [this opts asts]
+    (->> (mapcat ast/nodes asts)
+         (mapcat arg-vecs-of-ast)))
+  (lint-multiple [this opts ast]
+    (let [loc (meta ast)
+          {:keys [result local-names warnings] :as info} (seq-binding-form-info ast loc true)]
+      (if result
+        (let [
+                                        ;                 _ (do
+                                        ;                     (println "dbg ast " ast)
+                                        ;                     (println "dbg (type local-names):" (type local-names))
+                                        ;                     (pp/pprint local-names)
+                                        ;                     (flush))
+                          dups (->> (duplicate-local-names local-names)
+                                    (remove #(dont-warn-for-symbol? (:local-name %))))]
+                      (concat
+                       (map (fn [dup]
+                              {:loc (:loc dup)
+                               :linter :duplicate-params
+                               :duplicate-params {}
+                               :msg (if (= (:source-name dup) (:local-name dup))
+                                      (format "Local name `%s` occurs multiple times in the same argument vector"
+                                              (:source-name dup))
+                                      (format "Local name `%s` (part of full name `%s`) occurs multiple times in the same argument vector"
+                                              (:local-name dup) (:source-name dup)))})
+                            dups)
+                       warnings))
+                    ;; else
+                    [{:loc loc
                       :linter :duplicate-params
                       :duplicate-params {}
-                      :msg (if (= (:source-name dup) (:local-name dup))
-                             (format "Local name `%s` occurs multiple times in the same argument vector"
-                                     (:source-name dup))
-                             (format "Local name `%s` (part of full name `%s`) occurs multiple times in the same argument vector"
-                                     (:local-name dup) (:source-name dup)))})
-                   dups)
-              warnings))
-           ;; else
-           [{:loc loc
-             :linter :duplicate-params
-             :duplicate-params {}
-             :msg (format "Unrecognized argument vector syntax %s" arg-vec)}])))))))
+                      :msg (format "Unrecognized argument vector syntax %s" ast)}]))))

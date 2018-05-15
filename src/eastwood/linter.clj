@@ -1,5 +1,9 @@
 (ns eastwood.linter)
 
 (defprotocol ILint
-  (pre-process [linter opts asts])
+  (preprocess [linter opts asts])
   (lint [linter opts ast]))
+
+(defprotocol ILintMultiple
+  (preprocess-multiple [linter opts asts])
+  (lint-multiple [linter opts ast]))

@@ -69,7 +69,7 @@ the next."
 (deftest bad-arglists
   (lint-test
    'testcases.arglists
-   [:bad-arglists :unused-locals]
+   [:bad-arglists]
    default-opts
    {
     {:linter :bad-arglists,
@@ -83,6 +83,355 @@ the next."
      :line 22, :column 7}
     1,
     }))
+
+(deftest unused-locals-tests
+  (lint-test
+   'testcases.wrongprepost
+   [:unused-locals]
+   default-opts
+   {
+    {:linter :unused-locals,
+     :msg "let bound symbol 'tqname' never used",
+     :file "testcases/wrongprepost.clj",
+     :line 88,
+     :column 25}
+    1,
+    {:linter :unused-locals,
+     :msg "let bound symbol 'tqname' never used",
+     :file "testcases/wrongprepost.clj",
+     :line 100,
+     :column 25}
+    1,
+    {:linter :unused-locals,
+     :msg "let bound symbol 'tqname' never used",
+     :file "testcases/wrongprepost.clj",
+     :line 109,
+     :column 25}
+    1,
+    {:linter :unused-locals,
+     :msg "let bound symbol 'redis-ttl-ms' never used",
+     :file "testcases/wrongprepost.clj",
+     :line 109,
+     :column 40}
+    1,
+    })
+  (lint-test
+   'testcases.constanttestexpr
+   [:unused-locals]
+   default-opts
+   {{:linter :unused-locals,
+     :msg "let bound symbol 'x' never used",
+     :file "testcases/constanttestexpr.clj",
+     :line 67,
+     :column 10}
+    1,
+    {:linter :unused-locals,
+     :msg "let bound symbol 'x' never used",
+     :file "testcases/constanttestexpr.clj",
+     :line 68,
+     :column 12}
+    1,
+    {:linter :unused-locals,
+     :msg "let bound symbol 'x' never used",
+     :file "testcases/constanttestexpr.clj",
+     :line 69,
+     :column 14}
+    1,
+    {:linter :unused-locals,
+     :msg "let bound symbol 'x' never used",
+     :file "testcases/constanttestexpr.clj",
+     :line 74,
+     :column 55}
+    1,
+    {:linter :unused-locals,
+     :msg "let bound symbol 'x' never used",
+     :file "testcases/constanttestexpr.clj",
+     :line 75,
+     :column 59}
+    1}))
+
+(deftest constant-tests
+  (lint-test
+   'testcases.wrongprepost
+   [:constant-test ]
+   default-opts
+   {{:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: 7 in form (if 7 nil (do (throw (new java.lang.AssertionError (clojure.core/str \"Assert failed: \" (clojure.core/pr-str (quote 7)))))))",
+     :file (fname-from-parts "testcases" "wrongprepost.clj"),
+     :line 69, :column 1}
+    1,
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: :a in form (if :a nil (do (throw (new java.lang.AssertionError (clojure.core/str \"Assert failed: \" (clojure.core/pr-str (quote :a)))))))",
+     :file (fname-from-parts "testcases" "wrongprepost.clj"),
+     :line 74, :column 1}
+    1,
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: \"constant\" in form (if \"constant\" nil (do (throw (new java.lang.AssertionError (clojure.core/str \"Assert failed: \" (clojure.core/pr-str (quote \"constant\")))))))",
+     :file (fname-from-parts "testcases" "wrongprepost.clj"),
+     :line 74, :column 1}
+    1,
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: Number in form (if Number nil (do (throw (new java.lang.AssertionError (clojure.core/str \"Assert failed: \" (clojure.core/pr-str (quote Number)))))))",
+     :file (fname-from-parts "testcases" "wrongprepost.clj"),
+     :line 108, :column 1}
+    1,
+    })
+    (lint-test
+   'testcases.constanttestexpr
+   [:constant-test ]
+   default-opts
+   {
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: false in form (if false 1 2)",
+     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
+     :line 13, :column 1}
+    1,
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: [nil] in form (if [nil] 1 2)",
+     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
+     :line 14, :column 1}
+    1,
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: #{} in form (if #{} 1 2)",
+     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
+     :line 15, :column 1}
+    1,
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: {:a 1} in form (if {:a 1} 1 2)",
+     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
+     :line 16, :column 1}
+    1,
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: (quote ()) in form (if (quote ()) 1 2)",
+     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
+     :line 17, :column 1}
+    1,
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: (quote (\"string\")) in form (if (quote (\"string\")) 1 2)",
+     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
+     :line 18, :column 1}
+    1,
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: [(inc 41)] in form (if [(inc 41)] 1 2)",
+     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
+     :line 19, :column 1}
+    1,
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: #{(dec 43)} in form (if #{(dec 43)} 1 2)",
+     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
+     :line 20, :column 1}
+    1,
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: {:a (/ 84 2)} in form (if {:a (/ 84 2)} 1 2)",
+     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
+     :line 21, :column 1}
+    1,
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: (seq {:a 1}) in form (if (seq {:a 1}) 1 2)",
+     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
+     :line 22, :column 1}
+    1,
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: (clojure.core/not (quote x)) in form (if (clojure.core/not (quote x)) \"y\" \"z\")",
+     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
+     :line 24, :column 1}
+    1,
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: (clojure.core/not false) in form (if (clojure.core/not false) 1 2)",
+     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
+     :line 25, :column 1}
+    1,
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: (clojure.core/not [nil]) in form (if (clojure.core/not [nil]) 1 2)",
+     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
+     :line 26, :column 1}
+    1,
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: (clojure.core/not #{}) in form (if (clojure.core/not #{}) 1 2)",
+     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
+     :line 27, :column 1}
+    1,
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: (clojure.core/not {:a 1}) in form (if (clojure.core/not {:a 1}) 1 2)",
+     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
+     :line 28, :column 1}
+    1,
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: (clojure.core/not (quote ())) in form (if (clojure.core/not (quote ())) 1 2)",
+     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
+     :line 29, :column 1}
+    1,
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: (clojure.core/not (quote (\"string\"))) in form (if (clojure.core/not (quote (\"string\"))) 1 2)",
+     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
+     :line 30, :column 1}
+    1,
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: [(inc 41)] in form (if (clojure.core/not [(inc 41)]) 1 2)",
+     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
+     :line 31, :column 1}
+    1,
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: #{(dec 43)} in form (if (clojure.core/not #{(dec 43)}) 1 2)",
+     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
+     :line 32, :column 1}
+    1,
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: {:a (/ 84 2)} in form (if (clojure.core/not {:a (/ 84 2)}) 1 2)",
+     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
+     :line 33, :column 1}
+    1,
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: (clojure.core/not (seq {:a 1})) in form (if (clojure.core/not (seq {:a 1})) 1 2)",
+     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
+     :line 34, :column 1}
+    1,
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: nil in form (if nil (do (quote tom) :cat))",
+     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
+     :line 36, :column 1}
+    1,
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: [nil] in form (if [nil] nil (do 1))",
+     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
+     :line 37, :column 1},
+    1,
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: :x in form (if :x 8 (clojure.core/cond :else 9))",
+     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
+     :line 50, :column 1}
+    1,
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: false in form (if false (assert false \"This won't be reached, but shouldn't warn about it whether it can be reached or not.\"))",
+     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
+     :line 64, :column 1}
+    1,
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: [false] in form (if temp__<num>__auto__ (clojure.core/let [x temp__<num>__auto__] \"w\") \"v\")",
+     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
+     :line 67, :column 1}
+    1,
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: (sorted-set 5 7) in form (if temp__<num>__auto__ (do (clojure.core/let [x temp__<num>__auto__] (println \"Hello\"))))",
+     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
+     :line 68, :column 1}
+    1,
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: (clojure.core/seq [1 2]) in form (if temp__<num>__auto__ (do (clojure.core/let [xs__<num>__auto__ temp__<num>__auto__] (clojure.core/let [x (clojure.core/first xs__<num>__auto__)] (println \"Goodbye\")))))",
+     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
+     :line 69, :column 1}
+    1,
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: 7 in form (if and__<num>__auto__ (clojure.core/and (inc 2)) and__<num>__auto__)",
+     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
+     :line 71, :column 1}
+    1,
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: false in form (if or__<num>__auto__ or__<num>__auto__ (clojure.core/or 2))",
+     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
+     :line 72, :column 1}
+    1,
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: true in form (if true nil (do (throw (new java.lang.AssertionError (clojure.core/str \"Assert failed: \" \"string\" \"\\n\" (clojure.core/pr-str (quote true)))))))",
+     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
+     :line 84, :column 1}
+    1,
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: [false] in form (if [false] nil (do (throw (new java.lang.AssertionError (clojure.core/str \"Assert failed: \" (clojure.core/pr-str (quote [false])))))))",
+     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
+     :line 85, :column 1}
+    1,
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: 0 in form (if 0 nil (do (throw (new java.lang.AssertionError (clojure.core/str \"Assert failed: \" (clojure.core/pr-str (quote 0)))))))",
+     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
+     :line 111, :column 1}
+    1,
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: 32 in form (if 32 nil (do (throw (new java.lang.AssertionError (clojure.core/str \"Assert failed: \" (clojure.core/pr-str (quote 32)))))))",
+     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
+     :line 111, :column 1}
+    1,
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: (clojure.core/string? format-in__<num>__auto__) in form (if (clojure.core/string? format-in__<num>__auto__) ((var clojure.pprint/cached-compile) format-in__<num>__auto__) format-in__<num>__auto__)",
+     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
+     :line 122, :column 4}
+    1,
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: (map? (list [:p \"a\"] [:p \"b\"])) in form (if (map? (list [:p \"a\"] [:p \"b\"])) 1 2)",
+     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
+     :line 127, :column 1}
+    1,
+    {:linter :constant-test,
+     :msg "Test expression is always logical true or always logical false: (map? (list [:p \"a\"] [:p \"b\"])) in form (if x 1 2)",
+     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
+     :line 131, :column 3}
+    1}))
+(deftest wrong-pre-post
+  (lint-test
+   'testcases.wrongprepost
+   [:wrong-pre-post]
+   default-opts
+   {
+    {:linter :wrong-pre-post,
+     :msg "All function preconditions should be in a vector.  Found: (pos? x)",
+     :file (fname-from-parts "testcases" "wrongprepost.clj"),
+     :line 5, :column 9}
+    1,
+    {:linter :wrong-pre-post,
+     :msg "All function preconditions should be in a vector.  Found: (> x y)",
+     :file (fname-from-parts "testcases" "wrongprepost.clj"),
+     :line 12, :column 12}
+    1,
+    {:linter :wrong-pre-post,
+     :msg "Postcondition found that is probably always logical true or always logical false.  Should be changed to function call?  number?",
+     :file (fname-from-parts "testcases" "wrongprepost.clj"),
+     :line 23, :column 10}
+    1,
+    {:linter :wrong-pre-post,
+     :msg "All function postconditions should be in a vector.  Found: (number? %)",
+     :file (fname-from-parts "testcases" "wrongprepost.clj"),
+     :line 35, :column 10}
+    1,
+    {:linter :wrong-pre-post,
+     :msg "All function preconditions should be in a vector.  Found: (number? x)",
+     :file (fname-from-parts "testcases" "wrongprepost.clj"),
+     :line 41, :column 9}
+    1,
+    {:linter :wrong-pre-post,
+     :msg "Precondition found that is probably always logical true or always logical false.  Should be changed to function call?  f",
+     :file (fname-from-parts "testcases" "wrongprepost.clj"),
+     :line 51, :column 9}
+    1,
+    {:linter :wrong-pre-post,
+     :msg "Precondition found that is always logical true or always logical false.  Should be changed to function call?  7",
+     :file (fname-from-parts "testcases" "wrongprepost.clj"),
+     :line 70, :column 9}
+    1,
+    {:linter :wrong-pre-post,
+     :msg "Precondition found that is probably always logical true or always logical false.  Should be changed to function call?  >=",
+     :file (fname-from-parts "testcases" "wrongprepost.clj"),
+     :line 70, :column 9}
+    1,
+    {:linter :wrong-pre-post,
+     :msg "Precondition found that is always logical true or always logical false.  Should be changed to function call?  :a",
+     :file (fname-from-parts "testcases" "wrongprepost.clj"),
+     :line 75, :column 9}
+    1,
+    {:linter :wrong-pre-post,
+     :msg "Postcondition found that is always logical true or always logical false.  Should be changed to function call?  \"constant\"",
+     :file (fname-from-parts "testcases" "wrongprepost.clj"),
+     :line 76, :column 10}
+    1,
+    {:linter :wrong-pre-post,
+     :msg "Precondition found that is probably always logical true or always logical false.  Should be changed to function call?  wrong-pre-9",
+     :file (fname-from-parts "testcases" "wrongprepost.clj"),
+     :line 102, :column 9}
+    1,
+    {:linter :wrong-pre-post,
+     :msg "All function preconditions should be in a vector.  Found: (instance? Number datastore)",
+     :file (fname-from-parts "testcases" "wrongprepost.clj"),
+     :line 111, :column 9}
+    1}))
 
 (deftest test1
   (lint-test
@@ -1410,238 +1759,6 @@ the next."
     1,
     })
 
-  (let [common-expected-warnings
-        {
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: false in form (if false 1 2)",
-     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
-     :line 13, :column 1}
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: [nil] in form (if [nil] 1 2)",
-     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
-     :line 14, :column 1}
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: #{} in form (if #{} 1 2)",
-     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
-     :line 15, :column 1}
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: {:a 1} in form (if {:a 1} 1 2)",
-     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
-     :line 16, :column 1}
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: (quote ()) in form (if (quote ()) 1 2)",
-     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
-     :line 17, :column 1}
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: (quote (\"string\")) in form (if (quote (\"string\")) 1 2)",
-     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
-     :line 18, :column 1}
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: [(inc 41)] in form (if [(inc 41)] 1 2)",
-     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
-     :line 19, :column 1}
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: #{(dec 43)} in form (if #{(dec 43)} 1 2)",
-     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
-     :line 20, :column 1}
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: {:a (/ 84 2)} in form (if {:a (/ 84 2)} 1 2)",
-     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
-     :line 21, :column 1}
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: (seq {:a 1}) in form (if (seq {:a 1}) 1 2)",
-     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
-     :line 22, :column 1}
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: (clojure.core/not (quote x)) in form (if (clojure.core/not (quote x)) \"y\" \"z\")",
-     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
-     :line 24, :column 1}
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: (clojure.core/not false) in form (if (clojure.core/not false) 1 2)",
-     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
-     :line 25, :column 1}
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: (clojure.core/not [nil]) in form (if (clojure.core/not [nil]) 1 2)",
-     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
-     :line 26, :column 1}
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: (clojure.core/not #{}) in form (if (clojure.core/not #{}) 1 2)",
-     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
-     :line 27, :column 1}
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: (clojure.core/not {:a 1}) in form (if (clojure.core/not {:a 1}) 1 2)",
-     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
-     :line 28, :column 1}
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: (clojure.core/not (quote ())) in form (if (clojure.core/not (quote ())) 1 2)",
-     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
-     :line 29, :column 1}
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: (clojure.core/not (quote (\"string\"))) in form (if (clojure.core/not (quote (\"string\"))) 1 2)",
-     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
-     :line 30, :column 1}
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: [(inc 41)] in form (if (clojure.core/not [(inc 41)]) 1 2)",
-     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
-     :line 31, :column 1}
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: #{(dec 43)} in form (if (clojure.core/not #{(dec 43)}) 1 2)",
-     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
-     :line 32, :column 1}
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: {:a (/ 84 2)} in form (if (clojure.core/not {:a (/ 84 2)}) 1 2)",
-     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
-     :line 33, :column 1}
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: (clojure.core/not (seq {:a 1})) in form (if (clojure.core/not (seq {:a 1})) 1 2)",
-     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
-     :line 34, :column 1}
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: nil in form (if nil (do (quote tom) :cat))",
-     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
-     :line 36, :column 1}
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: [nil] in form (if [nil] nil (do 1))",
-     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
-     :line 37, :column 1},
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: :x in form (if :x 8 (clojure.core/cond :else 9))",
-     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
-     :line 50, :column 1}
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: false in form (if false (assert false \"This won't be reached, but shouldn't warn about it whether it can be reached or not.\"))",
-     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
-     :line 64, :column 1}
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: [false] in form (if temp__<num>__auto__ (clojure.core/let [x temp__<num>__auto__] \"w\") \"v\")",
-     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
-     :line 67, :column 1}
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: (sorted-set 5 7) in form (if temp__<num>__auto__ (do (clojure.core/let [x temp__<num>__auto__] (println \"Hello\"))))",
-     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
-     :line 68, :column 1}
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: (clojure.core/seq [1 2]) in form (if temp__<num>__auto__ (do (clojure.core/let [xs__<num>__auto__ temp__<num>__auto__] (clojure.core/let [x (clojure.core/first xs__<num>__auto__)] (println \"Goodbye\")))))",
-     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
-     :line 69, :column 1}
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: 7 in form (if and__<num>__auto__ (clojure.core/and (inc 2)) and__<num>__auto__)",
-     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
-     :line 71, :column 1}
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: false in form (if or__<num>__auto__ or__<num>__auto__ (clojure.core/or 2))",
-     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
-     :line 72, :column 1}
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: true in form (if true nil (do (throw (new java.lang.AssertionError (clojure.core/str \"Assert failed: \" \"string\" \"\\n\" (clojure.core/pr-str (quote true)))))))",
-     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
-     :line 84, :column 1}
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: [false] in form (if [false] nil (do (throw (new java.lang.AssertionError (clojure.core/str \"Assert failed: \" (clojure.core/pr-str (quote [false])))))))",
-     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
-     :line 85, :column 1}
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: 0 in form (if 0 nil (do (throw (new java.lang.AssertionError (clojure.core/str \"Assert failed: \" (clojure.core/pr-str (quote 0)))))))",
-     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
-     :line 111, :column 1}
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: 32 in form (if 32 nil (do (throw (new java.lang.AssertionError (clojure.core/str \"Assert failed: \" (clojure.core/pr-str (quote 32)))))))",
-     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
-     :line 111, :column 1}
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: (clojure.core/string? format-in__<num>__auto__) in form (if (clojure.core/string? format-in__<num>__auto__) ((var clojure.pprint/cached-compile) format-in__<num>__auto__) format-in__<num>__auto__)",
-     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
-     :line 122, :column 4}
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: (map? (list [:p \"a\"] [:p \"b\"])) in form (if (map? (list [:p \"a\"] [:p \"b\"])) 1 2)",
-     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
-     :line 127, :column 1}
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: (map? (list [:p \"a\"] [:p \"b\"])) in form (if x 1 2)",
-     :file (fname-from-parts "testcases" "constanttestexpr.clj"),
-     :line 131, :column 3}
-    1,
-    {:linter :unused-locals,
-     :msg "let bound symbol 'x' never used",
-     :file "testcases/constanttestexpr.clj",
-     :line 67,
-     :column 10}
-    1,
-    {:linter :unused-locals,
-     :msg "let bound symbol 'x' never used",
-     :file "testcases/constanttestexpr.clj",
-     :line 68,
-     :column 12}
-    1,
-    {:linter :unused-locals,
-     :msg "let bound symbol 'x' never used",
-     :file "testcases/constanttestexpr.clj",
-     :line 69,
-     :column 14}
-    1,
-    {:linter :unused-locals,
-     :msg "let bound symbol 'x' never used",
-     :file "testcases/constanttestexpr.clj",
-     :line 74,
-     :column 55}
-    1,
-    {:linter :unused-locals,
-     :msg "let bound symbol 'x' never used",
-     :file "testcases/constanttestexpr.clj",
-     :line 75,
-     :column 59}
-    1,
-    }
-        clojure-1-6-or-later-additional-expected-warnings
-        {
-         }
-        expected-warnings
-        (merge common-expected-warnings
-               (if (util/clojure-1-6-or-later)
-                 clojure-1-6-or-later-additional-expected-warnings
-                 nil))]
-    (lint-test
-     'testcases.constanttestexpr
-     [:constant-test :unused-locals]
-     default-opts
-     expected-warnings))
-  
   (lint-test
    'testcases.unusedlocals
    [:unused-locals :unused-private-vars]
@@ -1789,132 +1906,6 @@ the next."
      :msg ":require has a libspec with wrong option keys: :only - option keys for :require should only include the following: :as :exclude :include-macros :refer :refer-macros :rename",
      :file (fname-from-parts "testcases" "wrongnsform.clj"),
      :line 182, :column 13}
-    1,
-    })
-  (lint-test
-   'testcases.wrongprepost
-   (concat @#'eastwood.lint/default-linters [:unused-locals])
-   default-opts
-   {
-    {:linter :wrong-pre-post,
-     :msg "All function preconditions should be in a vector.  Found: (pos? x)",
-     :file (fname-from-parts "testcases" "wrongprepost.clj"),
-     :line 5, :column 9}
-    1,
-    {:linter :wrong-pre-post,
-     :msg "All function preconditions should be in a vector.  Found: (> x y)",
-     :file (fname-from-parts "testcases" "wrongprepost.clj"),
-     :line 12, :column 12}
-    1,
-    {:linter :wrong-pre-post,
-     :msg "Postcondition found that is probably always logical true or always logical false.  Should be changed to function call?  number?",
-     :file (fname-from-parts "testcases" "wrongprepost.clj"),
-     :line 23, :column 10}
-    1,
-    {:linter :wrong-pre-post,
-     :msg "All function postconditions should be in a vector.  Found: (number? %)",
-     :file (fname-from-parts "testcases" "wrongprepost.clj"),
-     :line 35, :column 10}
-    1,
-    {:linter :wrong-pre-post,
-     :msg "All function preconditions should be in a vector.  Found: (number? x)",
-     :file (fname-from-parts "testcases" "wrongprepost.clj"),
-     :line 41, :column 9}
-    1,
-    {:linter :wrong-pre-post,
-     :msg "Precondition found that is probably always logical true or always logical false.  Should be changed to function call?  f",
-     :file (fname-from-parts "testcases" "wrongprepost.clj"),
-     :line 51, :column 9}
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: 7 in form (if 7 nil (do (throw (new java.lang.AssertionError (clojure.core/str \"Assert failed: \" (clojure.core/pr-str (quote 7)))))))",
-     :file (fname-from-parts "testcases" "wrongprepost.clj"),
-     :line 69, :column 1}
-    1,
-    {:linter :wrong-pre-post,
-     :msg "Precondition found that is always logical true or always logical false.  Should be changed to function call?  7",
-     :file (fname-from-parts "testcases" "wrongprepost.clj"),
-     :line 70, :column 9}
-    1,
-    {:linter :wrong-pre-post,
-     :msg "Precondition found that is probably always logical true or always logical false.  Should be changed to function call?  >=",
-     :file (fname-from-parts "testcases" "wrongprepost.clj"),
-     :line 70, :column 9}
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: \"constant\" in form (if \"constant\" nil (do (throw (new java.lang.AssertionError (clojure.core/str \"Assert failed: \" (clojure.core/pr-str (quote \"constant\")))))))",
-     :file (fname-from-parts "testcases" "wrongprepost.clj"),
-     :line 74, :column 1}
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: :a in form (if :a nil (do (throw (new java.lang.AssertionError (clojure.core/str \"Assert failed: \" (clojure.core/pr-str (quote :a)))))))",
-     :file (fname-from-parts "testcases" "wrongprepost.clj"),
-     :line 74, :column 1}
-    1,
-    {:linter :wrong-pre-post,
-     :msg "Precondition found that is always logical true or always logical false.  Should be changed to function call?  :a",
-     :file (fname-from-parts "testcases" "wrongprepost.clj"),
-     :line 75, :column 9}
-    1,
-    {:linter :wrong-pre-post,
-     :msg "Postcondition found that is always logical true or always logical false.  Should be changed to function call?  \"constant\"",
-     :file (fname-from-parts "testcases" "wrongprepost.clj"),
-     :line 76, :column 10}
-    1,
-    {:linter :wrong-pre-post,
-     :msg "Precondition found that is probably always logical true or always logical false.  Should be changed to function call?  wrong-pre-9",
-     :file (fname-from-parts "testcases" "wrongprepost.clj"),
-     :line 102, :column 9}
-    1,
-    {:linter :constant-test,
-     :msg "Test expression is always logical true or always logical false: Number in form (if Number nil (do (throw (new java.lang.AssertionError (clojure.core/str \"Assert failed: \" (clojure.core/pr-str (quote Number)))))))",
-     :file (fname-from-parts "testcases" "wrongprepost.clj"),
-     :line 108, :column 1}
-    1,
-    {:linter :wrong-pre-post,
-     :msg "All function preconditions should be in a vector.  Found: (instance? Number datastore)",
-     :file (fname-from-parts "testcases" "wrongprepost.clj"),
-     :line 111, :column 9}
-    1,
-    {:linter :unused-locals,
-     :msg "let bound symbol 'tqname' never used",
-     :file "testcases/wrongprepost.clj",
-     :line 88,
-     :column 25}
-    1,
-    {:linter :unused-locals,
-     :msg "let bound symbol 'tqname' never used",
-     :file "testcases/wrongprepost.clj",
-     :line 100,
-     :column 25}
-    1,
-    {:linter :unused-locals,
-     :msg "let bound symbol 'tqname' never used",
-     :file "testcases/wrongprepost.clj",
-     :line 109,
-     :column 25}
-    1,
-    {:linter :unused-locals,
-     :msg "let bound symbol 'redis-ttl-ms' never used",
-     :file "testcases/wrongprepost.clj",
-     :line 109,
-     :column 40}
-    1,
-    })
-  (lint-test
-   'testcases.arglists
-   (concat @#'eastwood.lint/default-linters [:unused-locals])
-   default-opts
-   {
-    {:linter :bad-arglists,
-     :msg "Function on var fn-with-arglists1 defined taking # args [1] but :arglists metadata has # args [2]",
-     :file (fname-from-parts "testcases" "arglists.clj"),
-     :line 9, :column 7}
-    1,
-    {:linter :bad-arglists,
-     :msg "Function on var fn-with-arglists3 defined taking # args [1 3] but :arglists metadata has # args [2 4]",
-     :file (fname-from-parts "testcases" "arglists.clj"),
-     :line 22, :column 7}
     1,
     })
   (lint-test

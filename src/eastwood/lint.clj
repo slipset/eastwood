@@ -263,9 +263,7 @@ describing the error."
    {:name :wrong-ns-form,             :enabled-by-default true,
     :url "https://github.com/jonase/eastwood#wrong-ns-form",
     :fn misc/wrong-ns-form}
-   {:name :wrong-pre-post,            :enabled-by-default true,
-    :url "https://github.com/jonase/eastwood#wrong-pre-post",
-    :fn typos/wrong-pre-post}
+   (typos/->WrongPrePost :wrong-pre-post true "https://github.com/jonase/eastwood#wrong-pre-post",)
    {:name :wrong-tag,                 :enabled-by-default true,
     :url "https://github.com/jonase/eastwood#wrong-tag",
     :fn typetags/wrong-tag}

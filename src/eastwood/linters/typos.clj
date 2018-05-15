@@ -865,7 +865,6 @@ warning, that contains the constant value."
        (= 'clojure.core/cond
           (-> ast :raw-forms first util/fqsym-of-raw-form))))
 
-
 (defrecord ConstantTest [name enabled-by-default url]
   linter/ILint
   (preprocess [this opts asts]
@@ -986,87 +985,84 @@ warning, that contains the constant value."
                          (pr-str condition-form)))))))
 
 
-(defn wrong-pre-post-messages [kind conditions method-num ast
-                               condition-desc-begin condition-desc-middle]
+(defn wrong-pre-post-messages [prefix conditions method-num ast]
 ;;  (println (format "dbg wrong-pre-post-messages: kind=%s method-num=%s conditions=%s (vector? conditions)=%s (class conditions)=%s"
 ;;                   kind method-num conditions
 ;;                   (vector? conditions)
-;;                   (class conditions)))
-  (if (not (vector? conditions))
-    [(format "All function %s should be in a vector.  Found: %s"
-            condition-desc-middle (pr-str conditions))]
-    
-    (remove nil?
-     (for [[condition test-ast]
-           (map-indexed (fn [i condition]
-                          [condition
-                           (ast-of-condition-test kind ast method-num i
-                                                  condition)])
-                        conditions)]
-;;       (do
-;;         (println (format "dbg3: kind=%s line=%d :op=%s condition=%s :form=%s same?=%s"
-;;                          kind (:line (meta conditions))
-;;                          (:op test-ast)
-;;                          condition (:form test-ast)
-;;                          (= condition (:form test-ast))))
-       (cond
-        (= :const (:op test-ast))
-        (format "%s found that is always logical true or always logical false.  Should be changed to function call?  %s"
-                condition-desc-begin (pr-str condition))
+  ;;                   (class conditions)))
+  (let [base (str prefix "condition")
+        kind (keyword base)
+        condition-desc-begin (str/capitalize base)
+        condition-desc-middle (str base "s")]
+    (if (not (vector? conditions))
+      [(format "All function %s should be in a vector.  Found: %s"
+               condition-desc-middle (pr-str conditions))]
+      
+      (remove nil?
+              (for [[condition test-ast]
+                    (map-indexed (fn [i condition]
+                                   [condition
+                                    (ast-of-condition-test kind ast method-num i
+                                                           condition)])
+                                 conditions)]
+                ;;       (do
+                ;;         (println (format "dbg3: kind=%s line=%d :op=%s condition=%s :form=%s same?=%s"
+                ;;                          kind (:line (meta conditions))
+                ;;                          (:op test-ast)
+                ;;                          condition (:form test-ast)
+                ;;                          (= condition (:form test-ast))))
+                (cond
+                  (= :const (:op test-ast))
+                  (format "%s found that is always logical true or always logical false.  Should be changed to function call?  %s"
+                          condition-desc-begin (pr-str condition))
 
-        (= :var (:op test-ast))
-        (format "%s found that is probably always logical true or always logical false.  Should be changed to function call?  %s"
-                condition-desc-begin (pr-str condition))
-        
-        ;; In this case, probably the developer wanted to assert that
-        ;; a function arg was logical true, i.e. neither nil nor
-        ;; false.
-        (= :local (:op test-ast))
-        nil
-        
-        ;; The following kinds of things are 'complex' enough that we
-        ;; will not try to do any fancy calculation to determine
-        ;; whether their results are constant or not.
-        (#{:invoke :static-call :let :if :instance?} (:op test-ast))
-        nil
+                  (= :var (:op test-ast))
+                  (format "%s found that is probably always logical true or always logical false.  Should be changed to function call?  %s"
+                          condition-desc-begin (pr-str condition))
+                  
+                  ;; In this case, probably the developer wanted to assert that
+                  ;; a function arg was logical true, i.e. neither nil nor
+                  ;; false.
+                  (= :local (:op test-ast))
+                  nil
+                  
+                  ;; The following kinds of things are 'complex' enough that we
+                  ;; will not try to do any fancy calculation to determine
+                  ;; whether their results are constant or not.
+                  (#{:invoke :static-call :let :if :instance?} (:op test-ast))
+                  nil
 
-        :else
-        (println (format "dbg wrong-pre-post: condition=%s line=%d test-ast :op=%s"
-                         condition (:line (meta conditions))
-                         (:op test-ast))))))))
+                  :else
+                  (println (format "dbg wrong-pre-post: condition=%s line=%d test-ast :op=%s"
+                                   condition (:line (meta conditions))
+                                   (:op test-ast)))))))))
 ;;)
 
 
-(defn wrong-pre-post [{:keys [asts]} opt]
-  (let [fns-with-pre-post (->> asts
-                          (mapcat ast/nodes)
-                          (mapcat fn-ast-with-pre-post))]
-    (concat
-     (for [{:keys [ast form name pre method-num]} fns-with-pre-post
-           :when pre
-           :let [loc (meta pre)
-                 msgs (wrong-pre-post-messages :precondition pre
-                                               method-num ast
-                                               "Precondition"
-                                               "preconditions")]
-           msg msgs
-           :let [w {:loc loc :linter :wrong-pre-post
-                    :wrong-pre-post {:kind :pre, :ast ast}
-                    :msg msg}]]
-       w)
-     (for [{:keys [ast form name post method-num]} fns-with-pre-post
-           :when post
-           :let [loc (meta post)
-                 msgs (wrong-pre-post-messages :postcondition post
-                                               method-num ast
-                                               "Postcondition"
-                                               "postconditions")]
-           msg msgs
-           :let [w {:loc loc
-                    :linter :wrong-pre-post
-                    :wrong-pre-post {:kind :post, :ast ast}
-                    :msg msg}]]
-       w))))
+(defrecord WrongPrePost [name enabled-by-default url]
+  linter/ILintMultiple
+  (preprocess-multiple [this opts asts]
+    (->> asts
+         (mapcat ast/nodes)
+         (mapcat fn-ast-with-pre-post)))
+  (lint-multiple [this opts {:keys [ast form name pre post method-num]}]
+    (into
+     (when pre
+       (let [loc (meta pre)]
+         (->> (wrong-pre-post-messages "pre" pre method-num ast)
+              (map (fn [msg]
+                     {:loc loc
+                      :linter (:name this)
+                      :wrong-pre-post {:kind :pre, :ast ast}
+                      :msg msg})))))
+     (when post
+       (let [loc (meta post)]
+         (->> (wrong-pre-post-messages "post" post method-num ast)
+              (map (fn [msg]
+                     {:loc loc
+                      :linter (:name this)
+                      :wrong-pre-post {:kind :post, :ast ast}
+                      :msg msg}))))))))
 
 
 

@@ -903,7 +903,7 @@
      ;; clojure.core/libspec?).  Do the same here.
      (libspec? arg)
      (warnings-for-libspec arg kw loc)
-     
+
      (or (list? arg) (vector? arg))
      (cond
       ;; This case can occur, with no exception from Clojure.  There is a
@@ -913,10 +913,10 @@
         :linter :wrong-ns-form
         :msg (format "%s has an arg that is a 1-item list.  Clojure silently does nothing with this.  To %s it as a namespace, it should be a symbol on its own or it should be inside of a vector, not a list.  To use it as the first part of a prefix list, there should be libspecs after it in the list: %s"
                      kw (name kw) arg)}]
-      
+
       :else
       (mapcat #(warnings-for-libspec % kw loc) (rest arg)))
-     
+
      :else
      ;; Not sure if there is a test for this case, where Clojure 1.6.0
      ;; will not throw an exception during eval.
@@ -977,18 +977,18 @@
                                   " " (sort valid-but-unusual-flags)))}])
              (mapcat #(warnings-for-libspec-or-prefix-list % kw loc)
                      libspecs-or-prefix-lists)))
-          :import [] ; tbd: no checking yet
+          :import []        ; tbd: no checking yet
           :refer-clojure [] ; tbd: no checking yet
-          :gen-class [] ; tbd: no checking yet
-          :load []) ; tbd: no checking yet
-        )))))
+          :gen-class []     ; tbd: no checking yet
+          :load []))))))    ; tbd: no checking yet
 
-(defn wrong-ns-form [{:keys [asts]} opt]
-  (let [ns-asts (util/ns-form-asts asts)
-        warnings (mapcat warnings-for-one-ns-form ns-asts)]
-    (if (> (count ns-asts) 1)
-      (cons {:loc (-> ns-asts second :env)
-             :linter :wrong-ns-form
-             :msg "More than one ns form found in same file"}
-            warnings)
-      warnings)))
+(defrecord WrongNsForm [name enabled-by-default url]
+  linter/ILintMultiple
+  (preprocess-multiple [linter opts asts] [(util/ns-form-asts asts)])
+  (lint-multiple [linter opts ns-asts]
+    (let [warnings (mapcat warnings-for-one-ns-form ns-asts)]
+      (if (> (count ns-asts) 1)
+        (into [{:loc (-> ns-asts second :env)
+               :linter :wrong-ns-form
+               :msg "More than one ns form found in same file"}] warnings)
+        warnings))))

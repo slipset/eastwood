@@ -260,9 +260,7 @@ describing the error."
     :url "https://github.com/jonase/eastwood#unused-meta-on-macro",
     :fn unused/unused-meta-on-macro}
    (misc/->UnlimitedUse :unlimited-use true "https://github.com/jonase/eastwood#unlimited-use")
-   {:name :wrong-ns-form,             :enabled-by-default true,
-    :url "https://github.com/jonase/eastwood#wrong-ns-form",
-    :fn misc/wrong-ns-form}
+   (misc/->WrongNsForm :wrong-ns-form true "https://github.com/jonase/eastwood#wrong-ns-form")
    (typos/->WrongPrePost :wrong-pre-post true "https://github.com/jonase/eastwood#wrong-pre-post",)
    (typetags/->WrongTag :wrong-tag true "https://github.com/jonase/eastwood#wrong-tag")
    {:name :keyword-typos,             :enabled-by-default false,

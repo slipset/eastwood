@@ -987,8 +987,8 @@
   (preprocess-multiple [linter opts asts] [(util/ns-form-asts asts)])
   (lint-multiple [linter opts ns-asts]
     (let [warnings (mapcat warnings-for-one-ns-form ns-asts)]
-      (if (> (count ns-asts) 1)
-        (into [{:loc (-> ns-asts second :env)
-               :linter :wrong-ns-form
-               :msg "More than one ns form found in same file"}] warnings)
-        warnings))))
+      (into (if (> (count ns-asts) 1)
+              [{:loc (-> ns-asts second :env)
+                 :linter :wrong-ns-form
+                :msg "More than one ns form found in same file"}]
+              []) warnings))))

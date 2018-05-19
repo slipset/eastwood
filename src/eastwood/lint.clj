@@ -238,27 +238,13 @@ describing the error."
     :url "https://github.com/jonase/eastwood#suspicious-expression",
     :fn typos/suspicious-expression}
    (typos/->ConstantTest :constant-test true "https://github.com/jonase/eastwood#constant-test")
-   {:name :unused-ret-vals,           :enabled-by-default true,
-    :url "https://github.com/jonase/eastwood#unused-ret-vals",
-    :fn unused/unused-ret-vals}
-   {:name :unused-ret-vals-in-try,    :enabled-by-default true,
-    :url "https://github.com/jonase/eastwood#unused-ret-vals",
-    :fn unused/unused-ret-vals-in-try}
-   {:name :unused-private-vars,       :enabled-by-default false,
-    :url "https://github.com/jonase/eastwood#unused-private-vars",
-    :fn unused/unused-private-vars}
-   {:name :unused-fn-args,            :enabled-by-default false,
-    :url "https://github.com/jonase/eastwood#unused-fn-args",
-    :fn unused/unused-fn-args}
-   {:name :unused-locals,             :enabled-by-default false,
-    :url "https://github.com/jonase/eastwood#unused-locals",
-    :fn unused/unused-locals}
-   {:name :unused-namespaces,         :enabled-by-default false,
-    :url "https://github.com/jonase/eastwood#unused-namespaces",
-    :fn unused/unused-namespaces}
-   {:name :unused-meta-on-macro,      :enabled-by-default true,
-    :url "https://github.com/jonase/eastwood#unused-meta-on-macro",
-    :fn unused/unused-meta-on-macro}
+   (unused/->UnusedRetVals :unused-ret-vals true "https://github.com/jonase/eastwood#unused-ret-vals")
+   (unused/->UnusedRetValsInTry :unused-ret-vals-in-try  true "https://github.com/jonase/eastwood#unused-ret-vals")
+   (unused/->UnusedPrivateVars :unused-private-vars false "https://github.com/jonase/eastwood#unused-private-vars")
+   (unused/->UnusedFnArgs :unused-fn-args false "https://github.com/jonase/eastwood#unused-fn-args")
+   (unused/->UnusedLocals :unused-locals false "https://github.com/jonase/eastwood#unused-locals")
+   (unused/->UnusedNamespaces :unused-namespaces false "https://github.com/jonase/eastwood#unused-namespaces")
+   (unused/->UnusedMetaOnMacro :unused-meta-on-macro true "https://github.com/jonase/eastwood#unused-meta-on-macro")
    (misc/->UnlimitedUse :unlimited-use true "https://github.com/jonase/eastwood#unlimited-use")
    (misc/->WrongNsForm :wrong-ns-form true "https://github.com/jonase/eastwood#wrong-ns-form")
    (typos/->WrongPrePost :wrong-pre-post true "https://github.com/jonase/eastwood#wrong-pre-post",)

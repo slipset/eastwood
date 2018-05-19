@@ -8,6 +8,7 @@
             [eastwood.copieddeps.dep9.clojure.tools.namespace.parse :as parse]
             [clojure.pprint :as pp]
             [eastwood.util :as util]
+            [eastwood.linter :as linter]
             [eastwood.passes :as pass]
             [eastwood.copieddeps.dep1.clojure.tools.analyzer.ast :as ast]))
 
@@ -71,16 +72,17 @@
        (remove nil?)
        set))
 
-(defn unused-private-vars [{:keys [asts]} opt]
-  (let [pdefs (private-non-const-defs asts)
-        vars-used-set (vars-used asts)]
-    (for [pvar pdefs
-          :when (not (vars-used-set pvar))
-          :let [loc (meta pvar)]]
-      {:loc loc
-       :linter :unused-private-vars
-       :msg (format "Private var '%s' is never used"
-                    (-> pvar util/var-to-fqsym name))})))
+(defrecord UnusedPrivateVars [name enabled-by-default url]
+  linter/ILint
+  (preprocess [this opts asts]
+    (let [vars-used-set (vars-used asts)]
+      (->> (private-non-const-defs asts)
+           (remove vars-used-set))))
+  (lint [this opts pvar]
+    {:loc (meta pvar)
+     :linter (:name this)
+     :msg (format "Private var '%s' is never used"
+                  (-> pvar util/var-to-fqsym clojure.core/name))}))
 
 ;; Unused fn args
 
@@ -111,22 +113,21 @@ selectively disable such warnings if they wish."
             (let [args (params method)]
               (set/difference args (used-locals (ast/nodes (:body method))))))))
 
-(defn unused-fn-args [{:keys [asts]} opt]
-  (let [fn-exprs (->> asts
-                      (map util/enhance-extend-invocations)
-                      (mapcat ast/nodes)
-                      (filter (util/op= :fn)))]
-    (for [expr fn-exprs
-          :let [unused (->> (unused-fn-args* expr)
-                            (map :form)
-                            (remove ignore-arg?)
-                            set)]
-          unused-sym unused
-          :let [loc (-> unused-sym meta)]]
-      {:loc loc
-       :linter :unused-fn-args
-       :msg (format "Function arg %s never used" unused-sym)})))
-
+(defrecord UnusedFnArgs [name enabled-by-default url]
+  linter/ILintMultiple
+  (preprocess-multiple [linter opts asts]
+    (->> (map util/enhance-extend-invocations asts)
+         (mapcat ast/nodes)
+         (filter (util/op= :fn))))
+  (lint-multiple [linter opts expr]
+    (->> (unused-fn-args* expr)
+         (map :form)
+         (remove ignore-arg?)
+         set
+         (map (fn [unused-sym]
+                {:loc (-> unused-sym meta)
+                 :linter :unused-fn-args
+                 :msg (format "Function arg %s never used" unused-sym)})))))
 
 ;; Symbols in let or loop bindings that are unused
 
@@ -210,35 +211,31 @@ Example: (all-suffixes [1 2 3])
        (= 'clojure.core/loop
           (-> ast :raw-forms first util/fqsym-of-raw-form))))
 
-
-(defn unused-locals [{:keys [asts]} opt]
-  (let [exprs (->> asts
-                   (mapcat ast/nodes)
-                   (filter (fn [ast]
-                             (or (and (= :let (:op ast))
-                                      (not (let-ast-from-loop-expansion ast)))
-                                 (= :loop (:op ast))))))]
-    (for [expr exprs
-          ;; Without a check like this, defrecord's with no fields
-          ;; have macroexpansions containing multiple let's with
-          ;; unused symbols that would be warned about.
-          :when (not (and (= :let (:op expr))
-                          (util/inside-fieldless-defrecord expr)))
-          :let [unused (->> (unused-locals* expr)
-                            (map :form)
-                            (remove ignore-local-symbol?))]
-          unused-sym unused
-          :let [loc (or (pass/has-code-loc? (-> unused-sym meta))
-                        (pass/code-loc (pass/nearest-ast-with-loc expr)))]]
-      {:loc loc
-       :linter :unused-locals
-       :msg (format "%s bound symbol '%s' never used"
-                    (-> expr :op name)
-                    unused-sym)})))
-
+(defrecord UnusedLocals [name enabled-by-default url]
+  linter/ILintMultiple
+  (preprocess-multiple [linter opts asts]
+    (->> asts (mapcat ast/nodes)
+         (filter (fn [{:keys [op] :as ast}]
+                   (or (and (= :let op)
+                            (not (or (let-ast-from-loop-expansion ast)
+                                     ;; Without a check like this, defrecord's with no fields
+                                     ;; have macroexpansions containing multiple let's with
+                                     ;; unused symbols that would be warned about.
+                                     (util/inside-fieldless-defrecord ast))))
+                       (= :loop op))))))
+  (lint-multiple [linter opts expr]
+    (->> (unused-locals* expr)
+         (map :form)
+         (remove ignore-local-symbol?)
+         (map (fn [unused-sym]
+                (let [loc (or (pass/has-code-loc? (-> unused-sym meta))
+                              (pass/code-loc (pass/nearest-ast-with-loc expr)))]
+                  {:loc loc
+                   :linter :unused-locals
+                   :msg (format "%s bound symbol '%s' never used"
+                                (-> expr :op clojure.core/name) unused-sym)}))))))
 
 ;; Unused namespaces
-
 (defn required-namespaces [ns-asts]
   (->> ns-asts
        (mapcat #(nnext (first (:raw-forms %))))
@@ -258,56 +255,59 @@ Example: (all-suffixes [1 2 3])
 ;; the namespace where it was read.  At worst, it should get the
 ;; beginning of the ns form it is in.
 
-(defn unused-namespaces [{:keys [asts]} opt]
-  (let [ns-asts (util/ns-form-asts asts)
-        loc (pass/code-loc (first ns-asts))
-        curr-ns (-> ns-asts first :form second second second)
-        required (required-namespaces ns-asts)
-        used-vars (vars-used asts)
-        used-symbols (symbols-used asts)
-        used-keywords (keywords-used asts)
-        used-macros (macros-invoked asts)
-        used-protocols (protocols-used asts)
-;;        _ (do
-;;            (println "dbg: required namespaces:")
-;;            (pp/pprint required)
-;;            (println "dbg: vars used:")
-;;            (pp/pprint (map (juxt #(.getName (.ns %))
-;;                                  #(type (.getName (.ns %)))
-;;                                  #(.sym %))
-;;                            used-vars))
-;;            (println "dbg: symbols used:")
-;;            (pp/pprint (map (juxt identity #(if-let [n (namespace %)]
-;;                                              (symbol n))
-;;                                  #(symbol (name %)))
-;;                            used-symbols))
-;;            (println "dbg: keywords used:")
-;;            (pp/pprint (map (juxt identity #(if-let [n (namespace %)]
-;;                                              (symbol n))
-;;                                  #(symbol (name %)))
-;;                            used-keywords))
-;;            (println "dbg: macros used:")
-;;            (pp/pprint used-macros)
-;;            (println "dbg: protocols used:")
-;;            (pp/pprint used-protocols))
-        used-namespaces (set
-                         (concat (map #(-> ^clojure.lang.Var % .ns .getName)
-                                      used-vars)
-                                 (->> used-symbols
-                                      (map namespace)
-                                      (remove nil?)
-                                      (map symbol))
-                                 (->> used-keywords
-                                      (map namespace)
-                                      (remove nil?)
-                                      (map symbol))
-                                 (keep #(if-let [n (namespace %)] (symbol n))
-                                       used-macros)
-                                 (map namespace-for used-protocols)))]
-    (for [ns (set/difference required used-namespaces)]
-      {:loc loc
-       :linter :unused-namespaces
-       :msg (format "Namespace %s is never used in %s" ns curr-ns)})))
+(defrecord UnusedNamespaces [name enabled-by-default url]
+  linter/ILintMultiple
+  (preprocess-multiple [linter opts asts] [asts])
+  (lint-multiple [linter opts asts]
+    (let [ns-asts (util/ns-form-asts asts)
+          loc (pass/code-loc (first ns-asts))
+          curr-ns (-> ns-asts first :form second second second)
+          required (required-namespaces ns-asts)
+          used-vars (vars-used asts)
+          used-symbols (symbols-used asts)
+          used-keywords (keywords-used asts)
+          used-macros (macros-invoked asts)
+          used-protocols (protocols-used asts)
+          ;;        _ (do
+          ;;            (println "dbg: required namespaces:")
+          ;;            (pp/pprint required)
+          ;;            (println "dbg: vars used:")
+          ;;            (pp/pprint (map (juxt #(.getName (.ns %))
+          ;;                                  #(type (.getName (.ns %)))
+          ;;                                  #(.sym %))
+          ;;                            used-vars))
+          ;;            (println "dbg: symbols used:")
+          ;;            (pp/pprint (map (juxt identity #(if-let [n (namespace %)]
+          ;;                                              (symbol n))
+          ;;                                  #(symbol (name %)))
+          ;;                            used-symbols))
+          ;;            (println "dbg: keywords used:")
+          ;;            (pp/pprint (map (juxt identity #(if-let [n (namespace %)]
+          ;;                                              (symbol n))
+          ;;                                  #(symbol (name %)))
+          ;;                            used-keywords))
+          ;;            (println "dbg: macros used:")
+          ;;            (pp/pprint used-macros)
+          ;;            (println "dbg: protocols used:")
+          ;;            (pp/pprint used-protocols))
+          used-namespaces (set
+                           (concat (map #(-> ^clojure.lang.Var % .ns .getName)
+                                        used-vars)
+                                   (->> used-symbols
+                                        (map namespace)
+                                        (remove nil?)
+                                        (map symbol))
+                                   (->> used-keywords
+                                        (map namespace)
+                                        (remove nil?)
+                                        (map symbol))
+                                   (keep #(if-let [n (namespace %)] (symbol n))
+                                         used-macros)
+                                   (map namespace-for used-protocols)))]
+      (for [ns (set/difference required used-namespaces)]
+        {:loc loc
+         :linter :unused-namespaces
+         :msg (format "Namespace %s is never used in %s" ns curr-ns)}))))
 
 
 ;; Unused return values
@@ -525,7 +525,7 @@ discarded inside null: null'."
 ;; Note 5: Do not report an unused nil return value if it was caused
 ;; by a comment or gen-class macro invocation.
 
-(defn unused-ret-vals-2 [location {:keys [asts]} opt]
+(defn unused-ret-vals-2 [location asts opt]
   (let [warning-unused-invoke @warning-unused-invoke-delayed
         warning-unused-static @warning-unused-static-delayed
         unused-ret-val-exprs (->> asts
@@ -594,88 +594,93 @@ discarded inside null: null'."
           (unused-ret-val-lint-result stmt "function call"
                                       action v location)))))))
 
+(defrecord UnusedRetVals [name enabled-by-default url]
+  linter/ILint
+  (preprocess [linter opts asts]
+    (unused-ret-vals-2 :outside-try asts opts))
+  (lint [linter opts warning]
+    (let [linter (:linter warning)
+          info (get warning linter)
+          ast (:ast info)]
+      (when (util/allow-warning warning opts)
+        (util/debug-warning warning ast opts #{:enclosing-macros})
+        warning))))
 
-(defn unused-ret-vals* [location {:keys [asts] :as m} opt]
-  (let [warnings (unused-ret-vals-2 location m opt)]
-    (for [w warnings
-          :let [linter (:linter w)
-                info (get w linter)
-                ast (:ast info)
-                allow? (util/allow-warning w opt)]
-          :when allow?]
-      (do
-        (util/debug-warning w ast opt #{:enclosing-macros})
-        w))))
-
-
-(defn unused-ret-vals [& args]
-  (apply unused-ret-vals* :outside-try args))
-
-(defn unused-ret-vals-in-try [& args]
-  (apply unused-ret-vals* :inside-try args))
-
+(defrecord UnusedRetValsInTry [name enabled-by-default url]
+  linter/ILint
+  (preprocess [linter opts asts]
+    (unused-ret-vals-2 :inside-try asts opts))
+  (lint [linter opts warning]
+    (let [linter (:linter warning)
+          info (get warning linter)
+          ast (:ast info)]
+      (when (util/allow-warning warning opts)
+        (util/debug-warning warning ast opts #{:enclosing-macros})
+        warning))))
 
 ;; Unused metadata on macro invocations (depends upon macro
 ;; definition, but most macros ignore it)
 
-(defn unused-meta-on-macro [{:keys [asts]} opt]
-  (let [macro-invokes (->> asts
-                           (mapcat ast/nodes)
-                           (filter #(and (:raw-forms %)
-                                         (-> % :raw-forms first meta))))]
-    (for [ast macro-invokes
-          :let [orig-form (-> ast :raw-forms first)
-                loc (-> orig-form meta)
-                ;; The ::resolved-op key was added recently to t.a(.j)
-                ;; libs to record the resolution of Var names in
-                ;; :raw-forms.
-                non-loc-meta-keys (-> (set (keys loc))
-                                      (set/difference #{:file :line :column
-                                                        :end-line :end-column
-                                                        :eastwood.copieddeps.dep1.clojure.tools.analyzer/resolved-op
-                                                        }))
-                resolved-macro-symbol (-> ast :raw-forms first
-                                          util/fqsym-of-raw-form)
-                removed-meta-keys
-                (cond (= :new (:op ast)) non-loc-meta-keys
+(defrecord UnusedMetaOnMacro [name enabled-by-default url]
+  linter/ILint
+  (preprocess [linter opts asts]
+              (->> asts
+                   (mapcat ast/nodes)
+                   (filter #(and (:raw-forms %)
+                                 (-> % :raw-forms first meta)))))
+  (lint [linter opts ast]
+        (let [orig-form (-> ast :raw-forms first)
+              loc (-> orig-form meta)
+              ;; The ::resolved-op key was added recently to t.a(.j)
+              ;; libs to record the resolution of Var names in
+              ;; :raw-forms.
+              non-loc-meta-keys (-> (set (keys loc))
+                                    (set/difference #{:file :line :column
+                                                      :end-line :end-column
+                                                      :eastwood.copieddeps.dep1.clojure.tools.analyzer/resolved-op
+                                                      }))
+              resolved-macro-symbol (-> ast :raw-forms first
+                                        util/fqsym-of-raw-form)
+              removed-meta-keys
+              (cond (= :new (:op ast)) non-loc-meta-keys
 
-                      (#{:instance-call :static-call
-                         :instance-field :static-field :host-interop} (:op ast))
-                      (disj non-loc-meta-keys :tag)
+                    (#{:instance-call :static-call
+                       :instance-field :static-field :host-interop} (:op ast))
+                    (disj non-loc-meta-keys :tag)
 
-                      ;; No metadata is removed for invocations of
-                      ;; clojure.core/fn -- It is implemented
-                      ;; specially to do this by examining the
-                      ;; metadata of its &form argument.
-                      (= resolved-macro-symbol 'clojure.core/fn) []
+                    ;; No metadata is removed for invocations of
+                    ;; clojure.core/fn -- It is implemented
+                    ;; specially to do this by examining the
+                    ;; metadata of its &form argument.
+                    (= resolved-macro-symbol 'clojure.core/fn) []
 
-                      :else non-loc-meta-keys)
+                    :else non-loc-meta-keys)
 
-                sorted-removed-meta-keys (sort removed-meta-keys)]
-          :when (seq removed-meta-keys)]
+              sorted-removed-meta-keys (sort removed-meta-keys)]
+          (when (seq removed-meta-keys)
 
-      {:loc loc
-       :linter :unused-meta-on-macro
-       :msg
-       (cond
-         (= :new (:op ast))
-         (format "Java constructor call '%s' has metadata with keys %s.  All metadata is eliminated from such forms during macroexpansion and thus ignored by Clojure."
-                 (first orig-form)
-                 sorted-removed-meta-keys)
+            {:loc loc
+             :linter :unused-meta-on-macro
+             :msg
+             (cond
+               (= :new (:op ast))
+               (format "Java constructor call '%s' has metadata with keys %s.  All metadata is eliminated from such forms during macroexpansion and thus ignored by Clojure."
+                       (first orig-form)
+                       sorted-removed-meta-keys)
 
-         (#{:instance-call :static-call :instance-field :static-field
-            :host-interop} (:op ast))
-         (format "Java %s '%s' has metadata with keys %s.  All metadata keys except :tag are eliminated from such forms during macroexpansion and thus ignored by Clojure."
-                 (case (:op ast)
-                   :instance-call "instance method call"
-                   :static-call "static method call"
-                   :instance-field "instance field access"
-                   :static-field "static field access"
-                   :host-interop "instance method/field access")
-                 (first orig-form)
-                 sorted-removed-meta-keys)
-         
-         :else
-         (format "Macro invocation of '%s' has metadata with keys %s that are almost certainly ignored."
-                 (first orig-form)
-                 sorted-removed-meta-keys))})))
+               (#{:instance-call :static-call :instance-field :static-field
+                  :host-interop} (:op ast))
+               (format "Java %s '%s' has metadata with keys %s.  All metadata keys except :tag are eliminated from such forms during macroexpansion and thus ignored by Clojure."
+                       (case (:op ast)
+                         :instance-call "instance method call"
+                         :static-call "static method call"
+                         :instance-field "instance field access"
+                         :static-field "static field access"
+                         :host-interop "instance method/field access")
+                       (first orig-form)
+                       sorted-removed-meta-keys)
+
+               :else
+               (format "Macro invocation of '%s' has metadata with keys %s that are almost certainly ignored."
+                       (first orig-form)
+                       sorted-removed-meta-keys))}))))
